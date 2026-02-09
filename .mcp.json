@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "megregore": {
+      "command": "python",
+      "args": ["-m", "megregore"],
+      "cwd": "D:\\Projects\\Megregore"
+    }
+  }
+}

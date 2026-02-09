@@ -1,0 +1,15 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# Data (user-specific, not versioned)
+data/
+
+# IDE / Editor
+.vscode/
+.idea/
+
+# Claude Code local settings
+.claude/
