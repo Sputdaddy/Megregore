@@ -23,6 +23,9 @@ from .identity import get_current, get_history, get_reflections
 from .embeddings import is_available as embeddings_available
 from .analytics import get_top_accessed, get_orphan_memories, get_access_timeline, compute_analytics
 from .threads import list_threads as list_threads_db, get_thread, get_thread_memories
+from .health import run_health_check
+from .consolidation_engine import find_consolidation_candidates
+from .auto_linker import suggest_links
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
 
@@ -235,6 +238,32 @@ async def api_thread_memories(
     """Get memories in a thread."""
     memories = await get_thread_memories(thread_id, limit=limit)
     return {"memories": memories, "count": len(memories), "thread_id": thread_id}
+
+
+# --- Health API (V5) ---
+
+@app.get("/api/health")
+async def api_health():
+    """Full memory health report."""
+    return await run_health_check()
+
+
+@app.get("/api/health/consolidation-candidates")
+async def api_consolidation_candidates(
+    min_group_size: int = Query(3, ge=2, le=10),
+):
+    """Get consolidation candidate groups."""
+    candidates = await find_consolidation_candidates(min_group_size=min_group_size)
+    return {"candidates": candidates, "count": len(candidates)}
+
+
+@app.get("/api/health/suggested-links")
+async def api_suggested_links(
+    limit: int = Query(20, ge=1, le=100),
+):
+    """Get suggested links without creating them."""
+    suggestions = await suggest_links(limit=limit)
+    return {"suggestions": suggestions, "count": len(suggestions)}
 
 
 # --- Static Files (Web UI) ---

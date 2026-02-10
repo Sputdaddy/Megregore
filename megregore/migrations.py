@@ -153,3 +153,62 @@ async def migrate_v4_to_v5(db: aiosqlite.Connection) -> dict:
         "from_version": current_version,
         "to_version": 5,
     }
+
+
+async def migrate_v5_to_v6(db: aiosqlite.Connection) -> dict:
+    """
+    Migrate Megregore database from schema v5 to v6.
+
+    Adds source column to memory_links to distinguish manual vs auto-inferred links.
+
+    Args:
+        db: aiosqlite connection with foreign keys enabled.
+
+    Returns:
+        dict with status, from_version, to_version.
+
+    Idempotent — safe to call multiple times.
+    """
+    cursor = await db.execute(
+        "SELECT value FROM schema_meta WHERE key = ?", ("schema_version",)
+    )
+    row = await cursor.fetchone()
+    current_version = int(row[0]) if row else 5
+
+    if current_version >= 6:
+        logger.info("Database already at v6 or newer. Skipping migration.")
+        return {
+            "status": "already_migrated",
+            "from_version": current_version,
+            "to_version": current_version,
+        }
+
+    logger.info(f"Migrating database from v{current_version} to v6")
+
+    # Add source column to memory_links
+    try:
+        await db.execute(
+            "ALTER TABLE memory_links ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'"
+        )
+        logger.debug("Added column memory_links.source")
+    except aiosqlite.OperationalError as e:
+        if "already exists" in str(e):
+            logger.debug("Column memory_links.source already exists, skipping")
+        else:
+            raise
+
+    # Update schema version
+    await db.execute(
+        "INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)",
+        ("schema_version", "6"),
+    )
+    logger.debug("Updated schema_meta to version 6")
+
+    await db.commit()
+    logger.info("Migration v5 -> v6 complete")
+
+    return {
+        "status": "migrated",
+        "from_version": current_version,
+        "to_version": 6,
+    }

@@ -49,6 +49,17 @@ async def lifespan(server: FastMCP):
     except Exception as e:
         logger.warning("Activation decay failed (non-fatal): %s", e)
 
+    # V5: Auto-link inference at session startup
+    try:
+        from .auto_linker import infer_links
+        link_result = await infer_links()
+        logger.info(
+            "Auto-linker: %d new links created (scanned %d pairs)",
+            link_result["created"], link_result["scanned"],
+        )
+    except Exception as e:
+        logger.warning("Auto-linker failed (non-fatal): %s", e)
+
     yield
 
     # Shutdown: close the shared DB connection
@@ -522,6 +533,69 @@ async def surface_relevant(context: str, limit: int = 5) -> str:
         "count": len(formatted),
         "context": context,
         "memories": formatted,
+    })
+
+
+# --- V5: Intelligence Tools ---
+
+@mcp.tool()
+async def suggest_consolidations(min_group_size: int = 3) -> str:
+    """
+    Analyze memories and suggest groups that could be consolidated.
+
+    Finds clusters of related memories based on thread membership and semantic
+    similarity, scoring each group's consolidation potential.
+
+    Args:
+        min_group_size: Minimum memories per group to consider (default 3).
+    """
+    from .consolidation_engine import find_consolidation_candidates
+    candidates = await find_consolidation_candidates(min_group_size=min_group_size)
+
+    if not candidates:
+        return json.dumps({"status": "no_candidates", "candidates": []})
+
+    return json.dumps({
+        "status": "found",
+        "count": len(candidates),
+        "candidates": candidates,
+    })
+
+
+@mcp.tool()
+async def memory_health() -> str:
+    """
+    Run a health check on your memory space.
+
+    Identifies near-duplicates, importance/activation anomalies, orphaned memories,
+    and stale threads. Use this to maintain a healthy, well-connected memory space.
+    """
+    from .health import run_health_check
+    report = await run_health_check()
+    return json.dumps(report)
+
+
+@mcp.tool()
+async def suggest_links_tool(limit: int = 10) -> str:
+    """
+    Discover potential links between memories based on semantic similarity.
+
+    Returns suggested links without creating them, so you can review before acting.
+    Use the link() tool to create any links you agree with.
+
+    Args:
+        limit: Maximum number of suggestions (default 10).
+    """
+    from .auto_linker import suggest_links
+    suggestions = await suggest_links(limit=limit)
+
+    if not suggestions:
+        return json.dumps({"status": "no_suggestions", "suggestions": []})
+
+    return json.dumps({
+        "status": "found",
+        "count": len(suggestions),
+        "suggestions": suggestions,
     })
 
 

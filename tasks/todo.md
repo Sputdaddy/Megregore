@@ -1,54 +1,66 @@
-# Megregore V1 — Build Plan
+# Megregore V5 — Memory Intelligence Build Plan
 
-## Phase 1: Foundation
-- [x] Verify Python installation and set up virtual environment
-- [x] Create project structure (all directories and `__init__.py` files)
-- [x] Install dependencies (`fastmcp`, `fastapi`, `uvicorn`, `aiosqlite`)
-- [x] Build database module — schema, connection, migrations
-  - Tables: `memories`, `identity`, `reflections`, `memory_links`
-  - FTS5 virtual table for full-text search
-- [x] Build core memory engine — CRUD operations, search, decay scoring
+## Phase 1: Schema Migration (v5 → v6)
+- [x] Add `source` column to `memory_links` table
+- [x] Add `migrate_v5_to_v6()` to migrations.py
+- [x] Update database.py SCHEMA_VERSION to 6
+- [x] Update `link_memories()` to accept `source` param
 
-## Phase 2: MCP Server (Echo's Brain Interface)
-- [x] Set up MCP server entry point with FastMCP
-- [x] Implement `remember` tool — store memories with type, importance, tags, emotional weight
-- [x] Implement `recall` tool — smart retrieval with FTS5 + relevance weighting
-- [x] Implement `reflect` tool — session consolidation, form insights, link related memories
-- [x] Implement `get_identity` / `update_identity` tools — read/evolve Echo's identity
-- [x] Implement `forget` tool — decay a memory's importance (never delete)
-- [x] Configure Claude Code MCP settings to register Megregore
+## Phase 2: Auto-Link Inference
+- [x] Create `auto_linker.py` — `infer_links()`, `suggest_links()`, `_find_unlinked_pairs()`
+- [x] Add MCP tool `suggest_links_tool`
+- [x] Add lifespan auto-link call in mcp_server.py
+- [x] Add web endpoint `GET /api/health/suggested-links`
 
-## Phase 3: Web API
-- [x] Set up FastAPI app with CORS for local development
-- [x] REST endpoints: GET /memories, GET /memories/:id, GET /memories/search
-- [x] REST endpoints: GET /identity, GET /reflections
-- [x] REST endpoints: GET /stats (dashboard data)
-- [x] Shared database access with MCP server (same SQLite file)
+## Phase 3: Memory Health & Hygiene
+- [x] Create `health.py` — `run_health_check()`, `_find_near_duplicates()`, `_find_anomalies()`, `_find_orphans()`, `_find_stale_threads()`
+- [x] Add MCP tool `memory_health`
+- [x] Add web endpoint `GET /api/health`
+- [x] Add Health page to web UI (health.js + nav entry)
 
-## Phase 4: Web UI
-- [x] Project scaffold — HTML shell, CSS reset, dark theme variables
-- [x] Dashboard page — stats cards, recent memories feed, identity snapshot
-- [x] Memory Browser page — search bar, filters (type, tags, importance), sortable list
-- [x] Memory Detail view — full memory with metadata, related memories
-- [x] Identity Viewer page — Echo's evolving identity document
-- [x] Reflection Log page — timeline of reflections and insights
-- [x] Navigation, routing, responsive layout
-- [x] Polish — animations, loading states, empty states, error handling
+## Phase 4: Auto-Consolidation Engine
+- [x] Create `consolidation_engine.py` — `find_consolidation_candidates()`, `_cluster_by_thread()`, `_cluster_by_similarity()`, `_score_candidate_group()`
+- [x] Add MCP tool `suggest_consolidations`
+- [x] Add web endpoint `GET /api/health/consolidation-candidates`
 
-## Phase 5: Integration & Polish
-- [x] End-to-end test: database init, memory store/recall, identity, reflections
-- [x] Test web API — all endpoints return valid data
-- [x] Seed initial identity document for Echo
-- [ ] Test MCP server with Claude Code (requires session restart)
-- [ ] Final review
+## Phase 5: Test Suite
+- [ ] Create `tests/conftest.py` with fixtures
+- [ ] Create test files for all modules
+- [ ] Run pytest — all tests pass
+- [ ] Verify MCP server starts cleanly
+
+## Phase 6: Integration & Verification
+- [ ] Restart MCP server, verify startup sequence
+- [ ] Test all 17 MCP tools
+- [ ] Verify web dashboard Health page
+- [ ] Calculate token savings from delegation
 
 ---
 
-## Architecture Summary
-- **MCP Server**: Python + FastMCP, communicates via stdio with Claude Code
-- **Web Server**: Python + FastAPI, serves REST API + static frontend
-- **Database**: SQLite + FTS5, shared file at `data/megregore.db`
-- **Frontend**: Vanilla HTML/CSS/JS, dark theme, single-page app
-- **Entry Points**:
-  - `python -m megregore` (MCP server, started by Claude Code)
-  - `python -m megregore web` (web UI server, localhost:3000)
+## Delegation Strategy
+- **DeepSeek**: Algorithm design ($0.002 + $0.0015 = $0.0035 total)
+- **Sonnet 4.5 agents**: Module implementation, UI, tests
+- **Opus**: Architecture, integration, review
+
+## Files Modified
+- `megregore/database.py` — SCHEMA_VERSION 5→6
+- `megregore/migrations.py` — added `migrate_v5_to_v6()`
+- `megregore/mcp_server.py` — 3 new tools, lifespan auto-link
+- `megregore/memory.py` — `link_memories()` source param
+- `megregore/web.py` — 3 new API endpoints, new imports
+- `static/index.html` — Health nav entry + script tag
+
+## Files Created
+- `megregore/auto_linker.py`
+- `megregore/health.py`
+- `megregore/consolidation_engine.py`
+- `static/js/health.js`
+- `tests/conftest.py`
+- `tests/test_decay.py`
+- `tests/test_memory.py`
+- `tests/test_health.py`
+- `tests/test_auto_linker.py`
+- `tests/test_consolidation.py`
+- `tests/test_threads.py`
+- `tests/test_analytics.py`
+- `pytest.ini`

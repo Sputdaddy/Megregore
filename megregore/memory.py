@@ -518,15 +518,16 @@ async def link_memories(
     target_id: int,
     link_type: str = "related",
     strength: float = 1.0,
+    source: str = "manual",
 ) -> bool:
     """Create a link between two memories."""
     db = await database.get_connection()
     try:
         await db.execute(
             """INSERT OR REPLACE INTO memory_links
-               (source_memory_id, target_memory_id, link_type, strength, created_at)
-               VALUES (?, ?, ?, ?, ?)""",
-            (source_id, target_id, link_type, strength, _now()),
+               (source_memory_id, target_memory_id, link_type, strength, source, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (source_id, target_id, link_type, strength, source, _now()),
         )
         await db.commit()
         return True

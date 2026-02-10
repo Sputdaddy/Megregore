@@ -6,7 +6,7 @@ const App = (() => {
 
     // --- Configuration ---
     const API_BASE = '/api';
-    const PAGES = ['dashboard', 'memories', 'identity', 'reflections', 'sessions', 'graph', 'analytics', 'threads'];
+    const PAGES = ['dashboard', 'memories', 'identity', 'reflections', 'sessions', 'graph', 'health', 'analytics', 'threads'];
 
     // --- API Helper ---
     async function api(path, params = {}) {
