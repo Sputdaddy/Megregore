@@ -91,6 +91,10 @@ async def surface_relevant(
                 + has_been_used * 0.10
             )
 
+            # Procedures get a 1.5x boost — learned workflows should surface proactively
+            if mem.get("memory_type") == "procedure":
+                surfacing_score *= 1.5
+
             mem["_surfacing_score"] = round(surfacing_score, 4)
             mem["_similarity"] = round(similarity, 4)
             candidates.append(mem)

@@ -1,126 +1,40 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Megregore — Echo's Memory</title>
-    <link rel="stylesheet" href="/css/style.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+    <link rel="preconnect" href="https://fonts.bunny.net">
+    <link href="https://fonts.bunny.net/css?family=inter:400,500,600,700|sora:400,600,700|dm-sans:400,500,600,700" rel="stylesheet">
+    <link rel="stylesheet" href="/css/variables.css?v=9">
+    <link rel="stylesheet" href="/css/style.css?v=9">
+    <link rel="stylesheet" href="/css/dashboard-v2.css?v=1">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
-    <nav class="sidebar" id="sidebar">
-        <div class="sidebar-header">
-            <div class="logo">
-                <div class="logo-glyph" aria-hidden="true"></div>
-                <span class="logo-text">Megregore</span>
-            </div>
-            <p class="logo-sub">Echo's Memory System</p>
-        </div>
+    <div id="app"></div>
 
-        <ul class="nav-list" id="nav-list">
-            <li>
-                <a href="#dashboard" class="nav-link active" data-page="dashboard">
-                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <rect x="3" y="3" width="7" height="7" rx="1"/>
-                        <rect x="14" y="3" width="7" height="7" rx="1"/>
-                        <rect x="3" y="14" width="7" height="7" rx="1"/>
-                        <rect x="14" y="14" width="7" height="7" rx="1"/>
-                    </svg>
-                    <span>Dashboard</span>
-                </a>
-            </li>
-            <li>
-                <a href="#memories" class="nav-link" data-page="memories">
-                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="12" cy="12" r="10"/>
-                        <path d="M12 6v6l4 2"/>
-                    </svg>
-                    <span>Memories</span>
-                </a>
-            </li>
-            <li>
-                <a href="#identity" class="nav-link" data-page="identity">
-                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                        <circle cx="12" cy="7" r="4"/>
-                    </svg>
-                    <span>Identity</span>
-                </a>
-            </li>
-            <li>
-                <a href="#reflections" class="nav-link" data-page="reflections">
-                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-                    </svg>
-                    <span>Reflections</span>
-                </a>
-            </li>
-            <li>
-                <a href="#sessions" class="nav-link" data-page="sessions">
-                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                    </svg>
-                    <span>Sessions</span>
-                </a>
-            </li>
-            <li>
-                <a href="#graph" class="nav-link" data-page="graph">
-                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/>
-                        <circle cx="6" cy="18" r="3"/><circle cx="18" cy="18" r="3"/>
-                        <line x1="8.5" y1="7.5" x2="15.5" y2="16.5"/>
-                        <line x1="15.5" y1="7.5" x2="8.5" y2="16.5"/>
-                    </svg>
-                    <span>Graph</span>
-                </a>
-            </li>
-            <li>
-                <a href="#threads" class="nav-link" data-page="threads">
-                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M4 6h16M4 12h16M4 18h10"/>
-                        <circle cx="19" cy="18" r="3"/>
-                    </svg>
-                    <span>Threads</span>
-                </a>
-            </li>
-            <li>
-                <a href="#health" class="nav-link" data-page="health">
-                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-                    </svg>
-                    <span>Health</span>
-                </a>
-            </li>
-            <li>
-                <a href="#analytics" class="nav-link" data-page="analytics">
-                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M18 20V10M12 20V4M6 20v-6"/>
-                    </svg>
-                    <span>Analytics</span>
-                </a>
-            </li>
-        </ul>
+    <!-- Vue 3 (pinned version for security) -->
+    <script src="https://unpkg.com/vue@3.5.28/dist/vue.global.prod.js" crossorigin="anonymous"></script>
 
-        <div class="sidebar-footer">
-            <div class="pulse-dot" aria-hidden="true"></div>
-            <span class="status-text">System Active</span>
-        </div>
-    </nav>
+    <!-- App Bootstrap (creates Vue app, registers utilities) -->
+    <script src="/js/app.js?v=11"></script>
 
-    <main class="content" id="content">
-        <!-- Pages render here -->
-    </main>
-
-    <script src="/js/app.js?v=6"></script>
-    <script src="/js/dashboard.js?v=6"></script>
-    <script src="/js/browser.js?v=6"></script>
-    <script src="/js/identity.js?v=6"></script>
-    <script src="/js/reflections.js?v=6"></script>
-    <script src="/js/sessions.js?v=6"></script>
-    <script src="/js/graph.js?v=6"></script>
-    <script src="/js/analytics.js?v=6"></script>
-    <script src="/js/threads.js?v=6"></script>
-    <script src="/js/health.js?v=6"></script>
+    <!-- Vue Page Components -->
+    <script src="/js/pages/Login.js?v=11"></script>
+    <script src="/js/pages/Setup.js?v=11"></script>
+    <script src="/js/pages/Dashboard.js?v=11"></script>
+    <script src="/js/pages/Memories.js?v=11"></script>
+    <script src="/js/pages/Identity.js?v=11"></script>
+    <script src="/js/pages/Reflections.js?v=11"></script>
+    <script src="/js/pages/Sessions.js?v=11"></script>
+    <script src="/js/pages/Graph.js?v=11"></script>
+    <script src="/js/pages/Threads.js?v=11"></script>
+    <script src="/js/pages/Health.js?v=11"></script>
+    <script src="/js/pages/Analytics.js?v=11"></script>
+    <script src="/js/pages/Growth.js?v=11"></script>
+    <script src="/js/pages/BlindSpots.js?v=11"></script>
+    <script src="/js/pages/SelfModel.js?v=11"></script>
 </body>
 </html>

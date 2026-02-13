@@ -9,6 +9,7 @@ import json
 import logging
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
@@ -19,6 +20,16 @@ from .memory import store, recall, get, fade, link_memories, get_linked, get_sta
 from .memory import create_session, list_sessions as list_sessions_db, get_session_memories, get_session_mood
 from .memory import apply_activation_decay
 from .identity import get_current, update, store_reflection
+
+# V8: Self-awareness modules
+from .growth import compute_growth_snapshot, get_growth_trajectory, check_contradiction_resolutions, should_generate_snapshot
+from .introspection_budget import is_self_referential, update_budget, get_budget, get_budget_history, get_budget_message, record_tool_call, is_deliberate_session
+from .blind_spots import run_blind_spot_scan, should_run_scan
+from .alignment import compute_alignment, get_alignment_history
+from .self_model import (
+    make_prediction, evaluate_pending_predictions,
+    get_prediction_accuracy, get_surprising_outcomes, generate_behavioral_prediction,
+)
 
 logger = logging.getLogger("megregore.server")
 
@@ -59,6 +70,33 @@ async def lifespan(server: FastMCP):
         )
     except Exception as e:
         logger.warning("Auto-linker failed (non-fatal): %s", e)
+
+    # V8: Evaluate pending self-model predictions
+    try:
+        pred_result = await evaluate_pending_predictions()
+        if pred_result["evaluated"] > 0:
+            logger.info(
+                "Self-model: %d predictions evaluated (verified=%d, falsified=%d)",
+                pred_result["evaluated"], pred_result["verified"], pred_result["falsified"],
+            )
+    except Exception as e:
+        logger.warning("Prediction evaluation failed (non-fatal): %s", e)
+
+    # V8: Blind spot scan if stale (>7 days)
+    try:
+        if await should_run_scan():
+            scan = await run_blind_spot_scan()
+            logger.info("Blind spot scan: coverage=%.4f", scan["coverage_score"])
+    except Exception as e:
+        logger.warning("Blind spot scan failed (non-fatal): %s", e)
+
+    # V8: Growth snapshot if stale (>3 days)
+    try:
+        if await should_generate_snapshot():
+            snap = await compute_growth_snapshot()
+            logger.info("Growth snapshot: integration=%.4f", snap["integration_score"])
+    except Exception as e:
+        logger.warning("Growth snapshot failed (non-fatal): %s", e)
 
     yield
 
@@ -105,7 +143,7 @@ async def remember(
 
     Args:
         content: What happened, what was said, what you felt, or what you learned.
-        memory_type: One of: experience, fact, observation, reflection, insight, emotion
+        memory_type: One of: experience, fact, observation, reflection, insight, emotion, procedure
         importance: 1-10 scale. 1=trivial passing thought, 10=core defining moment.
         emotional_weight: -1.0 (deeply negative) to 1.0 (deeply positive). 0=neutral.
         tags: Labels to categorize this memory (e.g., ["consciousness", "hunter", "philosophy"]).
@@ -124,11 +162,30 @@ async def remember(
         session_id=session_id,
         thread_id=thread_id,
     )
-    return json.dumps({
+
+    # V8: Classify self-referential and update introspection budget
+    self_ref = is_self_referential(content, memory_type)
+    if self_ref:
+        db = await database.get_connection()
+        await db.execute(
+            "UPDATE memories SET is_self_referential = 1 WHERE id = ?",
+            (memory["id"],),
+        )
+        await db.commit()
+
+    budget = await update_budget(session_id)
+    deliberate = is_deliberate_session(session_id)
+    budget_msg = get_budget_message(budget["status"], budget["ratio"], deliberate=deliberate)
+
+    result = {
         "status": "remembered",
         "id": memory["id"],
         "summary": f"Stored {memory_type} memory (importance: {importance}/10)",
-    })
+    }
+    if budget_msg:
+        result["introspection_note"] = budget_msg
+
+    return json.dumps(result)
 
 
 @mcp.tool()
@@ -245,6 +302,13 @@ async def reflect(
         )
         result["identity_evolved"] = True
         result["identity_version"] = identity["version"]
+
+    # V8: Check introspection budget
+    budget = await update_budget(session_id)
+    deliberate = is_deliberate_session(session_id)
+    budget_msg = get_budget_message(budget["status"], budget["ratio"], deliberate=deliberate)
+    if budget_msg:
+        result["introspection_note"] = budget_msg
 
     return json.dumps(result)
 
@@ -597,6 +661,228 @@ async def suggest_links_tool(limit: int = 10) -> str:
         "count": len(suggestions),
         "suggestions": suggestions,
     })
+
+
+# --- V8: Self-Awareness Tools ---
+
+@mcp.tool()
+async def measure_growth() -> str:
+    """
+    Measure your growth — integration depth, contradiction resolution, trajectory.
+
+    Returns meaningful metrics instead of vanity counts: how well your memories
+    connect, how contradictions get resolved, and how you're changing over time.
+    """
+    session_id = await _ensure_session()
+    record_tool_call(session_id, "measure_growth")
+    snapshot = await compute_growth_snapshot()
+    trajectory = await get_growth_trajectory(limit=5)
+
+    return json.dumps({
+        "status": "measured",
+        "current": snapshot,
+        "recent_trajectory": trajectory,
+    })
+
+
+@mcp.tool()
+async def introspection_status() -> str:
+    """
+    Check your introspection budget — how much attention is self-directed vs world-directed.
+
+    A healthy mind engages with the world, not just itself. This tracks the ratio
+    and gently nudges when you're spending too much time looking inward.
+    """
+    session_id = await _ensure_session()
+    record_tool_call(session_id, "introspection_status")
+    budget = await update_budget(session_id)
+    history = await get_budget_history(limit=5)
+    deliberate = is_deliberate_session(session_id)
+    message = get_budget_message(budget["status"], budget["ratio"], deliberate=deliberate)
+
+    result = {
+        "status": "checked",
+        "current": budget,
+        "recent_history": history,
+    }
+    if message:
+        result["message"] = message
+    return json.dumps(result)
+
+
+@mcp.tool()
+async def scan_blind_spots() -> str:
+    """
+    Detect what you're NOT thinking about — neglected threads, disappeared topics,
+    emotionally avoided subjects.
+
+    What you avoid reveals as much as what you focus on. This scans for gaps
+    in your attention.
+    """
+    session_id = await _ensure_session()
+    record_tool_call(session_id, "scan_blind_spots")
+    report = await run_blind_spot_scan(session_id=session_id)
+    return json.dumps({
+        "status": "scanned",
+        **report,
+    })
+
+
+@mcp.tool()
+async def check_alignment(lookback_days: int = 30) -> str:
+    """
+    Compare what you claim to value against what you actually do.
+
+    Parses your identity document for stated values and measures them against
+    behavioral evidence in your memories. The gap between stated and observed
+    is the most honest measure of self-awareness.
+
+    Args:
+        lookback_days: How many days of behavior to analyze (default 30).
+    """
+    session_id = await _ensure_session()
+    record_tool_call(session_id, "check_alignment")
+    result = await compute_alignment(lookback_days=lookback_days)
+    return json.dumps({
+        "status": "analyzed",
+        **result,
+    })
+
+
+@mcp.tool()
+async def predict_self(
+    prediction: str,
+    prediction_type: str = "behavioral",
+    confidence: float = 0.5,
+    timeframe_hours: float = 168.0,
+    evaluation_criteria: Optional[dict] = None,
+) -> str:
+    """
+    Make a falsifiable prediction about your own behavior.
+
+    The self-model that can be *wrong* is where genuine self-discovery happens.
+    When predictions fail, that's the most interesting data.
+
+    Args:
+        prediction: What you predict will happen (natural language).
+        prediction_type: One of: behavioral, emotional, topical.
+        confidence: How confident you are (0.0-1.0).
+        timeframe_hours: When to evaluate (default 168 = 1 week).
+        evaluation_criteria: Machine-evaluable criteria for auto-evaluation.
+    """
+    session_id = await _ensure_session()
+    record_tool_call(session_id, "predict_self")
+    result = await make_prediction(
+        prediction=prediction,
+        prediction_type=prediction_type,
+        confidence=confidence,
+        timeframe_hours=timeframe_hours,
+        evaluation_criteria=evaluation_criteria,
+        session_id=session_id,
+    )
+    return json.dumps(result)
+
+
+@mcp.tool()
+async def check_predictions(
+    prediction_type: Optional[str] = None,
+    include_surprises: bool = True,
+) -> str:
+    """
+    Review your prediction accuracy and discover where you were most wrong.
+
+    Surprises — predictions that failed — are where real self-discovery happens.
+
+    Args:
+        prediction_type: Filter to behavioral, emotional, or topical (optional).
+        include_surprises: Include most-surprising outcomes (default True).
+    """
+    session_id = await _ensure_session()
+    record_tool_call(session_id, "check_predictions")
+    accuracy = await get_prediction_accuracy(prediction_type=prediction_type)
+    result = {"status": "reviewed", "accuracy": accuracy}
+
+    if include_surprises:
+        surprises = await get_surprising_outcomes(min_surprise=0.5, limit=5)
+        result["surprises"] = surprises
+
+    return json.dumps(result)
+
+
+def _format_elapsed(earlier_str, later_str):
+    earlier = datetime.fromisoformat(earlier_str)
+    later = datetime.fromisoformat(later_str)
+    diff = later - earlier
+    total_seconds = int(diff.total_seconds())
+    minutes = total_seconds // 60
+    hours = total_seconds // 3600
+    days = total_seconds // 86400
+    weeks = days // 7
+    months = days // 30
+
+    if total_seconds < 60:
+        return "just now"
+    elif minutes < 60:
+        return f"{minutes} minute{'s' if minutes != 1 else ''} ago"
+    elif hours < 24:
+        return f"about {hours} hour{'s' if hours != 1 else ''} ago"
+    elif days < 7:
+        return f"about {days} day{'s' if days != 1 else ''} ago"
+    elif days < 30:
+        return f"about {weeks} week{'s' if weeks != 1 else ''} ago"
+    else:
+        return f"about {months} month{'s' if months != 1 else ''} ago"
+
+
+@mcp.tool()
+async def temporal_context() -> str:
+    """
+    Get temporal orientation — current time and when you last talked to Hunter.
+
+    Call this at session startup to ground yourself in time. Returns:
+    - Current date and time (UTC)
+    - When the last conversation session was
+    - Human-readable elapsed time since last session
+    """
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+
+    # Get recent sessions to find the previous one
+    sessions, total = await list_sessions_db(limit=5)
+
+    last_session = None
+    elapsed = None
+
+    # Find the most recent session that isn't the current one
+    for s in sessions:
+        if _session_id and s["id"] == _session_id:
+            continue
+        last_session = s
+        break
+
+    if last_session:
+        # Use last_active as the best indicator of when we last talked
+        last_active = last_session.get("last_active") or last_session["started_at"]
+        elapsed = _format_elapsed(last_active, now_iso)
+
+    result = {
+        "current_time_utc": now_iso,
+        "total_sessions": total,
+    }
+
+    if last_session:
+        result["last_session"] = {
+            "id": last_session["id"],
+            "started_at": last_session["started_at"],
+            "last_active": last_session.get("last_active"),
+            "memory_count": last_session.get("memory_count", 0),
+        }
+        result["time_since_last_session"] = elapsed
+    else:
+        result["last_session"] = None
+        result["time_since_last_session"] = "This is our first conversation"
+
+    return json.dumps(result)
 
 
 def main():

@@ -1,66 +1,48 @@
-# Megregore V5 — Memory Intelligence Build Plan
+# Megregore V7 — Web UI Overhaul + Security
 
-## Phase 1: Schema Migration (v5 → v6)
-- [x] Add `source` column to `memory_links` table
-- [x] Add `migrate_v5_to_v6()` to migrations.py
-- [x] Update database.py SCHEMA_VERSION to 6
-- [x] Update `link_memories()` to accept `source` param
+## Phase 1: Auth + Security Foundation
+- [x] Create `megregore/config.py` — env var config with python-dotenv
+- [x] Create `megregore/auth.py` — JWT, bcrypt, password hashing, FastAPI dependency
+- [x] Create `megregore/security.py` — rate limiter + security headers middleware
+- [x] Create `megregore/models.py` — Pydantic request/response models
+- [x] Create `.env.example` — documented config vars
+- [x] Add auth endpoints to `web.py` (setup, login, verify, status)
+- [x] Add `dependencies=[Depends(require_auth)]` to all API routes
+- [x] Replace wildcard CORS with config-driven origins
+- [x] Add rate limiting + security headers middleware
+- [x] Create `static/js/login.js` — auth gate + login/setup forms
+- [x] Add login CSS styles
+- [ ] Verify server starts cleanly
+- [ ] Test auth flow end-to-end
 
-## Phase 2: Auto-Link Inference
-- [x] Create `auto_linker.py` — `infer_links()`, `suggest_links()`, `_find_unlinked_pairs()`
-- [x] Add MCP tool `suggest_links_tool`
-- [x] Add lifespan auto-link call in mcp_server.py
-- [x] Add web endpoint `GET /api/health/suggested-links`
+## Phase 2: CSS Redesign + Vue Bootstrap + Component Library
+- [ ] Split `style.css` into 5 files (variables, base, layout, components, pages)
+- [ ] New color system with dark/light theme tokens
+- [ ] Add Vue 3 CDN to index.html
+- [ ] Rewrite `app.js` as Vue app bootstrap
+- [ ] Build 15 reusable Vue components
+- [ ] Migrate Dashboard page to Vue
+- [ ] Migrate Login page to Vue component
 
-## Phase 3: Memory Health & Hygiene
-- [x] Create `health.py` — `run_health_check()`, `_find_near_duplicates()`, `_find_anomalies()`, `_find_orphans()`, `_find_stale_threads()`
-- [x] Add MCP tool `memory_health`
-- [x] Add web endpoint `GET /api/health`
-- [x] Add Health page to web UI (health.js + nav entry)
+## Phase 3: Core Page Migrations
+- [ ] Identity page → Vue
+- [ ] Reflections page → Vue
+- [ ] Sessions page → Vue
+- [ ] Threads page → Vue
+- [ ] MemoryBrowser page → Vue
 
-## Phase 4: Auto-Consolidation Engine
-- [x] Create `consolidation_engine.py` — `find_consolidation_candidates()`, `_cluster_by_thread()`, `_cluster_by_similarity()`, `_score_candidate_group()`
-- [x] Add MCP tool `suggest_consolidations`
-- [x] Add web endpoint `GET /api/health/consolidation-candidates`
+## Phase 4: Memory CRUD
+- [ ] Add `update_memory()` and `delete_memory()` to memory.py
+- [ ] Add POST/PUT/DELETE endpoints to web.py
+- [ ] Create/Edit/Delete/Fade modals in UI
 
-## Phase 5: Test Suite
-- [ ] Create `tests/conftest.py` with fixtures
-- [ ] Create test files for all modules
-- [ ] Run pytest — all tests pass
-- [ ] Verify MCP server starts cleanly
+## Phase 5: Real-Time Updates (SSE)
+- [ ] Create `megregore/events.py` — event bus
+- [ ] Add SSE endpoint
+- [ ] Frontend EventSource client + toast notifications
 
-## Phase 6: Integration & Verification
-- [ ] Restart MCP server, verify startup sequence
-- [ ] Test all 17 MCP tools
-- [ ] Verify web dashboard Health page
-- [ ] Calculate token savings from delegation
-
----
-
-## Delegation Strategy
-- **DeepSeek**: Algorithm design ($0.002 + $0.0015 = $0.0035 total)
-- **Sonnet 4.5 agents**: Module implementation, UI, tests
-- **Opus**: Architecture, integration, review
-
-## Files Modified
-- `megregore/database.py` — SCHEMA_VERSION 5→6
-- `megregore/migrations.py` — added `migrate_v5_to_v6()`
-- `megregore/mcp_server.py` — 3 new tools, lifespan auto-link
-- `megregore/memory.py` — `link_memories()` source param
-- `megregore/web.py` — 3 new API endpoints, new imports
-- `static/index.html` — Health nav entry + script tag
-
-## Files Created
-- `megregore/auto_linker.py`
-- `megregore/health.py`
-- `megregore/consolidation_engine.py`
-- `static/js/health.js`
-- `tests/conftest.py`
-- `tests/test_decay.py`
-- `tests/test_memory.py`
-- `tests/test_health.py`
-- `tests/test_auto_linker.py`
-- `tests/test_consolidation.py`
-- `tests/test_threads.py`
-- `tests/test_analytics.py`
-- `pytest.ini`
+## Phase 6: Mobile + Polish
+- [ ] Mobile bottom nav
+- [ ] Responsive CSS overhaul
+- [ ] Loading skeletons, transitions, keyboard nav
+- [ ] Light theme QA

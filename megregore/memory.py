@@ -2,12 +2,19 @@
 
 import json
 import math
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from . import database
 from . import embeddings
 from . import identity
+
+
+def _sanitize_fts(query: str) -> str:
+    """Sanitize a search query for safe use in FTS5 MATCH expressions.
+    Strips special FTS5 syntax characters to prevent query injection."""
+    return re.sub(r'[*"():\^{}~\-]', ' ', query).strip()
 
 
 def _now() -> str:
@@ -232,8 +239,9 @@ async def recall(
     try:
         if effective_mode in ("hybrid", "keyword"):
             if query.strip():
+                sanitized = _sanitize_fts(query)
                 search_terms = " OR ".join(
-                    f'"{term}"' for term in query.split() if term.strip()
+                    f'"{term}"' for term in sanitized.split() if term.strip()
                 )
                 sql = """
                     SELECT m.*, fts.rank as fts_rank
@@ -873,7 +881,7 @@ async def apply_activation_decay() -> dict:
     db = await database.get_connection()
     try:
         cursor = await db.execute(
-            "SELECT id, importance, activation_level, last_activation_decay, created_at FROM memories"
+            "SELECT id, importance, activation_level, last_activation_decay, created_at, memory_type FROM memories"
         )
         rows = await cursor.fetchall()
 
@@ -882,7 +890,10 @@ async def apply_activation_decay() -> dict:
             last_decay = row["last_activation_decay"] or row["created_at"]
             current = row["activation_level"] if row["activation_level"] is not None else 1.0
 
-            new_activation = decay_activation(current, row["importance"], last_decay, now)
+            new_activation = decay_activation(
+                current, row["importance"], last_decay, now,
+                memory_type=row["memory_type"],
+            )
 
             if new_activation != current:
                 await db.execute(

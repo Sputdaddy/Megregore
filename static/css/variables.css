@@ -1,0 +1,142 @@
+/* ============================================================
+   Megregore Design Tokens — Dark/Light Theme
+   Toggle via data-theme attribute on <html>
+   ============================================================ */
+
+:root, [data-theme="dark"] {
+    /* Backgrounds */
+    --color-bg-base: #0f1117;
+    --color-bg-raised: #161921;
+    --color-bg-overlay: #1c1f2b;
+    --color-bg-input: #12141c;
+    --color-bg-hover: #1e2233;
+
+    /* Borders */
+    --color-border-default: #252836;
+    --color-border-subtle: #1e212d;
+    --color-border-focus: #6366f1;
+
+    /* Accent */
+    --color-accent-primary: #818cf8;
+    --color-accent-primary-dim: rgba(129, 140, 248, 0.12);
+    --color-accent-primary-glow: rgba(129, 140, 248, 0.35);
+    --color-accent-secondary: #34d399;
+
+    /* Text */
+    --color-text-primary: #e4e5f1;
+    --color-text-secondary: #9194a5;
+    --color-text-muted: #5d6073;
+    --color-text-inverse: #0f1117;
+    --color-text-bright: #f0f0ff;
+
+    /* Semantic */
+    --color-semantic-positive: #34d399;
+    --color-semantic-negative: #fb7185;
+    --color-semantic-warning: #fbbf24;
+    --color-semantic-info: #60a5fa;
+
+    /* Memory Types */
+    --color-memory-experience: #a78bfa;
+    --color-memory-fact: #60a5fa;
+    --color-memory-observation: #22d3ee;
+    --color-memory-reflection: #c4b5fd;
+    --color-memory-insight: #fbbf24;
+    --color-memory-emotion: #f472b6;
+
+    /* Shadows */
+    --shadow-subtle: 0 2px 8px rgba(0, 0, 0, 0.3);
+    --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.4);
+    --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+
+[data-theme="light"] {
+    /* Backgrounds */
+    --color-bg-base: #f8f9fc;
+    --color-bg-raised: #ffffff;
+    --color-bg-overlay: #ffffff;
+    --color-bg-input: #f0f1f5;
+    --color-bg-hover: #eef0f5;
+
+    /* Borders */
+    --color-border-default: #e2e4ea;
+    --color-border-subtle: #eef0f5;
+    --color-border-focus: #6366f1;
+
+    /* Accent */
+    --color-accent-primary: #6366f1;
+    --color-accent-primary-dim: rgba(99, 102, 241, 0.08);
+    --color-accent-primary-glow: rgba(99, 102, 241, 0.15);
+    --color-accent-secondary: #059669;
+
+    /* Text */
+    --color-text-primary: #1a1d2e;
+    --color-text-secondary: #5d6073;
+    --color-text-muted: #9194a5;
+    --color-text-inverse: #ffffff;
+    --color-text-bright: #0f1117;
+
+    /* Semantic */
+    --color-semantic-positive: #059669;
+    --color-semantic-negative: #dc2626;
+    --color-semantic-warning: #d97706;
+    --color-semantic-info: #2563eb;
+
+    /* Memory Types */
+    --color-memory-experience: #7c3aed;
+    --color-memory-fact: #2563eb;
+    --color-memory-observation: #0891b2;
+    --color-memory-reflection: #8b5cf6;
+    --color-memory-insight: #d97706;
+    --color-memory-emotion: #db2777;
+
+    /* Shadows */
+    --shadow-subtle: 0 2px 8px rgba(0, 0, 0, 0.08);
+    --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.12);
+    --shadow-modal: 0 20px 60px rgba(0, 0, 0, 0.18);
+}
+
+/* Typography */
+:root {
+    --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', Consolas, monospace;
+}
+
+/* Spacing scale (4px base) */
+:root {
+    --space-1: 0.25rem;   /* 4px */
+    --space-2: 0.5rem;    /* 8px */
+    --space-3: 0.75rem;   /* 12px */
+    --space-4: 1rem;      /* 16px */
+    --space-5: 1.25rem;   /* 20px */
+    --space-6: 1.5rem;    /* 24px */
+    --space-7: 2rem;      /* 32px */
+    --space-8: 2.5rem;    /* 40px */
+    --space-9: 3rem;      /* 48px */
+    --space-10: 4rem;     /* 64px */
+    --space-11: 5rem;     /* 80px */
+    --space-12: 6rem;     /* 96px */
+}
+
+/* Border radius */
+:root {
+    --radius-xs: 0.25rem;   /* 4px */
+    --radius-sm: 0.375rem;  /* 6px */
+    --radius: 0.625rem;     /* 10px */
+    --radius-lg: 1rem;      /* 16px */
+    --radius-xl: 1.5rem;    /* 24px */
+    --radius-full: 9999px;
+}
+
+/* Transitions */
+:root {
+    --transition: 180ms ease;
+    --transition-slow: 350ms ease;
+}
+
+/* Z-index scale */
+:root {
+    --z-dropdown: 10;
+    --z-sticky: 20;
+    --z-modal: 50;
+    --z-toast: 100;
+}

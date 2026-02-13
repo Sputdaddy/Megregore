@@ -16,9 +16,11 @@ async def db():
     from megregore.database import SCHEMA
     await conn.executescript(SCHEMA)
 
-    from megregore.migrations import migrate_v4_to_v5, migrate_v5_to_v6
+    from megregore.migrations import migrate_v4_to_v5, migrate_v5_to_v6, migrate_v6_to_v7, migrate_v7_to_v8
     await migrate_v4_to_v5(conn)
     await migrate_v5_to_v6(conn)
+    await migrate_v6_to_v7(conn)
+    await migrate_v7_to_v8(conn)
 
     yield conn
     await conn.close()

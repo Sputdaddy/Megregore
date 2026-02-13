@@ -212,3 +212,220 @@ async def migrate_v5_to_v6(db: aiosqlite.Connection) -> dict:
         "from_version": current_version,
         "to_version": 6,
     }
+
+
+async def migrate_v6_to_v7(db: aiosqlite.Connection) -> dict:
+    """
+    Migrate Megregore database from schema v6 to v7.
+
+    Adds self-awareness tables: growth_snapshots, introspection_budget,
+    blind_spot_reports, value_alignment_snapshots, self_predictions.
+    Adds columns: memories.is_self_referential, memory_links.resolved/resolved_at/resolved_by_id.
+
+    Idempotent — safe to call multiple times.
+    """
+    cursor = await db.execute(
+        "SELECT value FROM schema_meta WHERE key = ?", ("schema_version",)
+    )
+    row = await cursor.fetchone()
+    current_version = int(row[0]) if row else 6
+
+    if current_version >= 7:
+        logger.info("Database already at v7 or newer. Skipping migration.")
+        return {
+            "status": "already_migrated",
+            "from_version": current_version,
+            "to_version": current_version,
+        }
+
+    logger.info(f"Migrating database from v{current_version} to v7")
+
+    # --- New columns on existing tables ---
+
+    memory_columns = [
+        ("is_self_referential", "INTEGER NOT NULL DEFAULT 0"),
+    ]
+    for col_name, col_def in memory_columns:
+        try:
+            await db.execute(f"ALTER TABLE memories ADD COLUMN {col_name} {col_def}")
+            logger.debug(f"Added column memories.{col_name}")
+        except aiosqlite.OperationalError as e:
+            if "already exists" in str(e) or "duplicate column" in str(e):
+                logger.debug(f"Column memories.{col_name} already exists, skipping")
+            else:
+                raise
+
+    link_columns = [
+        ("resolved", "INTEGER NOT NULL DEFAULT 0"),
+        ("resolved_at", "TEXT DEFAULT NULL"),
+        ("resolved_by_id", "INTEGER DEFAULT NULL"),
+    ]
+    for col_name, col_def in link_columns:
+        try:
+            await db.execute(f"ALTER TABLE memory_links ADD COLUMN {col_name} {col_def}")
+            logger.debug(f"Added column memory_links.{col_name}")
+        except aiosqlite.OperationalError as e:
+            if "already exists" in str(e) or "duplicate column" in str(e):
+                logger.debug(f"Column memory_links.{col_name} already exists, skipping")
+            else:
+                raise
+
+    # --- New tables ---
+
+    tables = {
+        "growth_snapshots": """
+            CREATE TABLE growth_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                total_contradictions INTEGER NOT NULL DEFAULT 0,
+                resolved_contradictions INTEGER NOT NULL DEFAULT 0,
+                resolution_rate REAL NOT NULL DEFAULT 0.0,
+                integration_score REAL NOT NULL DEFAULT 0.0,
+                avg_links_per_memory REAL NOT NULL DEFAULT 0.0,
+                thread_coverage_pct REAL NOT NULL DEFAULT 0.0,
+                consolidation_ratio REAL NOT NULL DEFAULT 0.0,
+                unique_topic_count INTEGER NOT NULL DEFAULT 0,
+                cross_thread_link_count INTEGER NOT NULL DEFAULT 0,
+                emotional_range REAL NOT NULL DEFAULT 0.0,
+                integration_delta REAL NOT NULL DEFAULT 0.0,
+                session_id TEXT DEFAULT NULL,
+                created_at TEXT NOT NULL
+            )
+        """,
+        "introspection_budget": """
+            CREATE TABLE introspection_budget (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                total_memories INTEGER NOT NULL DEFAULT 0,
+                self_referential_count INTEGER NOT NULL DEFAULT 0,
+                reflections_count INTEGER NOT NULL DEFAULT 0,
+                identity_checks INTEGER NOT NULL DEFAULT 0,
+                introspection_ratio REAL NOT NULL DEFAULT 0.0,
+                budget_status TEXT NOT NULL DEFAULT 'healthy',
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (session_id) REFERENCES sessions(id)
+            )
+        """,
+        "blind_spot_reports": """
+            CREATE TABLE blind_spot_reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                report_type TEXT NOT NULL DEFAULT 'periodic',
+                neglected_threads TEXT NOT NULL,
+                topic_deserts TEXT NOT NULL,
+                emotional_avoidance TEXT NOT NULL,
+                coverage_score REAL NOT NULL CHECK (coverage_score BETWEEN 0.0 AND 1.0),
+                session_id TEXT DEFAULT NULL,
+                created_at TEXT NOT NULL
+            )
+        """,
+        "value_alignment_snapshots": """
+            CREATE TABLE value_alignment_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                identity_version INTEGER NOT NULL,
+                stated_values TEXT NOT NULL,
+                observed_behaviors TEXT NOT NULL,
+                gaps TEXT NOT NULL,
+                alignment_score REAL NOT NULL CHECK (alignment_score BETWEEN 0.0 AND 1.0),
+                session_id TEXT DEFAULT NULL,
+                created_at TEXT NOT NULL
+            )
+        """,
+        "self_predictions": """
+            CREATE TABLE self_predictions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                prediction TEXT NOT NULL,
+                prediction_type TEXT NOT NULL DEFAULT 'behavioral',
+                confidence REAL NOT NULL DEFAULT 0.5 CHECK (confidence BETWEEN 0.0 AND 1.0),
+                timeframe_hours REAL NOT NULL DEFAULT 168.0,
+                evaluation_criteria TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                outcome_data TEXT DEFAULT NULL,
+                surprise_score REAL DEFAULT NULL,
+                session_id TEXT DEFAULT NULL,
+                created_at TEXT NOT NULL,
+                evaluated_at TEXT DEFAULT NULL
+            )
+        """,
+    }
+
+    for table_name, create_sql in tables.items():
+        try:
+            await db.execute(create_sql)
+            logger.debug(f"Created {table_name} table")
+        except aiosqlite.OperationalError as e:
+            if "already exists" in str(e):
+                logger.debug(f"{table_name} table already exists, skipping")
+            else:
+                raise
+
+    # --- Indexes ---
+
+    indexes = [
+        "CREATE INDEX IF NOT EXISTS idx_predictions_status ON self_predictions(status, created_at)",
+        "CREATE INDEX IF NOT EXISTS idx_predictions_type ON self_predictions(prediction_type)",
+        "CREATE INDEX IF NOT EXISTS idx_alignment_created ON value_alignment_snapshots(created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_blind_spots_created ON blind_spot_reports(created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_growth_created ON growth_snapshots(created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_budget_session ON introspection_budget(session_id)",
+    ]
+    for idx_sql in indexes:
+        await db.execute(idx_sql)
+    logger.debug("Created all v7 indexes")
+
+    # Update schema version
+    await db.execute(
+        "INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)",
+        ("schema_version", "7"),
+    )
+    logger.debug("Updated schema_meta to version 7")
+
+    await db.commit()
+    logger.info("Migration v6 -> v7 complete")
+
+    return {
+        "status": "migrated",
+        "from_version": current_version,
+        "to_version": 7,
+    }
+
+
+async def migrate_v7_to_v8(db: aiosqlite.Connection) -> dict:
+    """
+    Migrate Megregore database from schema v7 to v8.
+
+    V8 changes are code-level only (improved alignment proxies, introspection
+    context-awareness, procedural memory type). No schema changes needed.
+    This migration just bumps the version number.
+
+    Idempotent — safe to call multiple times.
+    """
+    cursor = await db.execute(
+        "SELECT value FROM schema_meta WHERE key = ?", ("schema_version",)
+    )
+    row = await cursor.fetchone()
+    current_version = int(row[0]) if row else 7
+
+    if current_version >= 8:
+        logger.info("Database already at v8 or newer. Skipping migration.")
+        return {
+            "status": "already_migrated",
+            "from_version": current_version,
+            "to_version": current_version,
+        }
+
+    logger.info(f"Migrating database from v{current_version} to v8")
+
+    # Update schema version
+    await db.execute(
+        "INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)",
+        ("schema_version", "8"),
+    )
+    logger.debug("Updated schema_meta to version 8")
+
+    await db.commit()
+    logger.info("Migration v7 -> v8 complete")
+
+    return {
+        "status": "migrated",
+        "from_version": current_version,
+        "to_version": 8,
+    }

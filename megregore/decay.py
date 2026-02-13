@@ -4,20 +4,26 @@ import math
 from datetime import datetime
 
 
-def compute_half_life(importance: int) -> float:
+def compute_half_life(importance: int, memory_type: str = "experience") -> float:
     """
     Compute half-life in hours, scaled by importance level (1-10).
 
     Higher importance memories decay more slowly. Uses exponential scaling
     to give meaningful differences across the importance range.
+    Procedural memories decay 3x slower — learned skills are more stable.
 
     Args:
         importance: Memory importance level (1-10).
+        memory_type: Memory type. "procedure" gets 3x multiplier.
 
     Returns:
         Half-life in hours. importance=1 yields ~24h, importance=10 yields ~478h.
+        Procedures: importance=1 yields ~72h, importance=10 yields ~1434h.
     """
-    return 24.0 * (importance ** 1.3)
+    base = 24.0 * (importance ** 1.3)
+    if memory_type == "procedure":
+        return base * 3.0
+    return base
 
 
 def decay_activation(
@@ -25,18 +31,20 @@ def decay_activation(
     importance: int,
     last_decay_at: str,
     now_iso: str,
+    memory_type: str = "experience",
 ) -> float:
     """
     Apply exponential decay to activation based on time elapsed.
 
     Simulates natural decay of memory activation over time using exponential
-    decay curve with half-life determined by importance.
+    decay curve with half-life determined by importance and memory type.
 
     Args:
         current_activation: Current activation value (0.01-1.0).
         importance: Memory importance level (1-10).
         last_decay_at: ISO-format timestamp of last decay application.
         now_iso: Current time as ISO-format timestamp.
+        memory_type: Memory type. "procedure" decays 3x slower.
 
     Returns:
         Decayed activation value, clamped to [0.01, 1.0] and rounded to 4 decimals.
@@ -49,7 +57,7 @@ def decay_activation(
     if hours_elapsed <= 0:
         return current_activation
 
-    half_life = compute_half_life(importance)
+    half_life = compute_half_life(importance, memory_type)
     lambda_decay = 0.693 / half_life
     decayed = current_activation * math.exp(-lambda_decay * hours_elapsed)
 
