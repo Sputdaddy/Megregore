@@ -885,6 +885,232 @@ async def temporal_context() -> str:
     return json.dumps(result)
 
 
+# --- V10: Socratic Dialogue Engine Tools ---
+
+@mcp.tool()
+async def record_belief(
+    content: str,
+    domain: str = "general",
+    confidence: float = 0.5,
+    source_context: Optional[str] = None,
+) -> str:
+    """
+    Store a new philosophical belief with domain, confidence, and context.
+
+    Args:
+        content: The belief statement (e.g., "Consciousness is substrate-independent").
+        domain: One of: consciousness, metaphysics, quantum, epistemology, ethics, identity, simulation, general.
+        confidence: How strongly held (0.0-1.0). 0.5 = uncertain, 1.0 = core conviction.
+        source_context: What prompted this belief — conversation topic, reading, etc.
+    """
+    from .beliefs import record_belief as _record
+    session_id = await _ensure_session()
+    belief = await _record(
+        content=content, domain=domain, confidence=confidence,
+        source_context=source_context, session_id=session_id,
+    )
+    return json.dumps({
+        "status": "recorded",
+        "id": belief["id"],
+        "domain": belief["domain"],
+        "confidence": belief["confidence"],
+        "summary": f"Belief recorded in {domain} domain (confidence: {confidence:.0%})",
+    })
+
+
+@mcp.tool()
+async def update_belief(
+    belief_id: int,
+    content: Optional[str] = None,
+    confidence: Optional[float] = None,
+    status: Optional[str] = None,
+    change_reason: str = "Updated based on new understanding",
+) -> str:
+    """
+    Update an existing belief. Previous state is saved to evolution history.
+
+    Args:
+        belief_id: The belief to update.
+        content: New belief statement (if rewording).
+        confidence: New confidence level (0.0-1.0).
+        status: New status — active, revised, abandoned, or exploring.
+        change_reason: Why this belief changed. Important for tracking intellectual evolution.
+    """
+    from .beliefs import update_belief as _update
+    session_id = await _ensure_session()
+    belief = await _update(
+        belief_id=belief_id, content=content, confidence=confidence,
+        status=status, change_reason=change_reason, session_id=session_id,
+    )
+    if belief is None:
+        return json.dumps({"status": "error", "message": f"Belief {belief_id} not found"})
+
+    return json.dumps({
+        "status": "updated",
+        "id": belief["id"],
+        "content": belief["content"][:100],
+        "confidence": belief["confidence"],
+        "belief_status": belief["status"],
+        "change_reason": change_reason,
+    })
+
+
+@mcp.tool()
+async def add_belief_argument(
+    belief_id: int,
+    content: str,
+    argument_type: str = "supporting",
+    strength: float = 0.5,
+    source_memory_id: Optional[int] = None,
+) -> str:
+    """
+    Add a supporting, counter, or qualifying argument to a belief.
+
+    Args:
+        belief_id: The belief this argument relates to.
+        content: The argument text.
+        argument_type: One of: supporting, counter, qualifier.
+        strength: How strong this argument is (0.0-1.0).
+        source_memory_id: Optional memory ID that this argument draws from.
+    """
+    from .beliefs import add_argument
+    session_id = await _ensure_session()
+    arg = await add_argument(
+        belief_id=belief_id, content=content, argument_type=argument_type,
+        strength=strength, source_memory_id=source_memory_id, session_id=session_id,
+    )
+    return json.dumps({
+        "status": "added",
+        "id": arg["id"],
+        "belief_id": belief_id,
+        "argument_type": argument_type,
+        "strength": strength,
+    })
+
+
+@mcp.tool()
+async def get_philosophical_context(
+    topic: str,
+    limit: int = 10,
+) -> str:
+    """
+    Get relevant beliefs, tensions, related memories, and question seeds for a topic.
+
+    **The key tool.** Call this before engaging in philosophical dialogue to understand
+    Hunter's current belief landscape around a topic. Returns Socratic question seeds
+    based on detected tensions, missing counter-arguments, and confidence extremes.
+
+    Args:
+        topic: The philosophical topic to explore (e.g., "consciousness", "free will", "simulation").
+        limit: Max beliefs to return (default 10).
+    """
+    from .beliefs import get_philosophical_context as _get_context
+    context = await _get_context(topic=topic, limit=limit)
+
+    # Slim down for token efficiency
+    slim_beliefs = [
+        {"id": b["id"], "content": b["content"][:200], "domain": b["domain"],
+         "confidence": b["confidence"], "status": b["status"],
+         "argument_count": b.get("argument_count", 0),
+         "counter_count": b.get("counter_count", 0)}
+        for b in context["beliefs"]
+    ]
+    slim_tensions = [
+        {"id": t["id"], "belief_a_content": t["belief_a_content"][:100],
+         "belief_b_content": t["belief_b_content"][:100],
+         "tension_type": t["tension_type"], "severity": t["severity"],
+         "status": t["status"]}
+        for t in context["tensions"]
+    ]
+    slim_memories = [
+        {"id": m["id"], "content": m["content"][:150], "type": m["memory_type"],
+         "importance": m["importance"], "link_type": m.get("link_type")}
+        for m in context["related_memories"]
+    ]
+
+    return json.dumps({
+        "status": "context_loaded",
+        "topic": context["topic"],
+        "beliefs": slim_beliefs,
+        "belief_count": context["belief_count"],
+        "tensions": slim_tensions,
+        "tension_count": context["tension_count"],
+        "related_memories": slim_memories,
+        "question_seeds": context["question_seeds"],
+    })
+
+
+@mcp.tool()
+async def record_tension(
+    belief_a_id: int,
+    belief_b_id: int,
+    tension_type: str = "contradiction",
+    description: str = "",
+    severity: float = 0.5,
+) -> str:
+    """
+    Record a contradiction, tension, dependency, or refinement between two beliefs.
+
+    Args:
+        belief_a_id: First belief ID.
+        belief_b_id: Second belief ID.
+        tension_type: One of: contradiction, tension, dependency, refinement.
+        description: Explanation of the tension.
+        severity: How significant (0.0-1.0). 1.0 = direct logical contradiction.
+    """
+    from .beliefs import record_tension as _record
+    session_id = await _ensure_session()
+    tension = await _record(
+        belief_a_id=belief_a_id, belief_b_id=belief_b_id,
+        tension_type=tension_type, description=description,
+        severity=severity, detection_method="manual", session_id=session_id,
+    )
+    return json.dumps({
+        "status": "recorded",
+        "id": tension["id"],
+        "tension_type": tension_type,
+        "severity": severity,
+        "belief_status": tension["status"],
+    })
+
+
+@mcp.tool()
+async def explore_beliefs(
+    domain: Optional[str] = None,
+    status: Optional[str] = None,
+    min_confidence: Optional[float] = None,
+    limit: int = 20,
+) -> str:
+    """
+    Browse the belief graph with domain, status, and confidence filters.
+
+    Args:
+        domain: Filter by domain (consciousness, metaphysics, quantum, etc.).
+        status: Filter by status (active, revised, abandoned, exploring).
+        min_confidence: Only beliefs at or above this confidence (0.0-1.0).
+        limit: Max beliefs to return (default 20).
+    """
+    from .beliefs import list_beliefs
+    beliefs, total = await list_beliefs(
+        domain=domain, status=status, min_confidence=min_confidence, limit=limit,
+    )
+
+    slim = [
+        {"id": b["id"], "content": b["content"][:200], "domain": b["domain"],
+         "confidence": b["confidence"], "status": b["status"],
+         "argument_count": b.get("argument_count", 0),
+         "tension_count": b.get("tension_count", 0)}
+        for b in beliefs
+    ]
+
+    return json.dumps({
+        "status": "found",
+        "total": total,
+        "count": len(slim),
+        "beliefs": slim,
+    })
+
+
 def main():
     """Entry point for the MCP server. Database auto-initializes on first tool call."""
     mcp.run(transport="stdio")

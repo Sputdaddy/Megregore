@@ -53,6 +53,11 @@ from .introspection_budget import get_budget, get_budget_history
 from .blind_spots import run_blind_spot_scan, get_blind_spot_history
 from .alignment import compute_alignment, get_alignment_history
 from .self_model import get_prediction_accuracy, get_surprising_outcomes
+from .beliefs import (
+    list_beliefs as list_beliefs_db, get_belief, get_belief_graph_data,
+    get_domain_stats, get_domain_summary, get_belief_evolution,
+    get_belief_arguments, get_all_tensions,
+)
 from .models import LoginRequest, SetupRequest, AuthStatus
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
@@ -61,6 +66,9 @@ STATIC_DIR = Path(__file__).parent.parent / "static"
 VALID_MEMORY_TYPES = {"experience", "fact", "observation", "reflection", "insight", "emotion", "procedure"}
 VALID_SORT_COLUMNS = {"created_at", "importance", "access_count", "emotional_weight", "last_accessed", "activation_level"}
 VALID_SORT_ORDERS = {"asc", "desc"}
+VALID_BELIEF_DOMAINS = {"consciousness", "metaphysics", "quantum", "epistemology", "ethics", "identity", "simulation", "general"}
+VALID_BELIEF_STATUSES = {"active", "revised", "abandoned", "exploring"}
+VALID_TENSION_STATUSES = {"unresolved", "explored", "resolved", "accepted"}
 VALID_INSIGHT_TYPES = {"pattern", "growth", "connection", "realization", "consolidation"}
 
 app = FastAPI(
@@ -512,6 +520,83 @@ async def api_self_model_accuracy(
 ):
     """Get prediction accuracy metrics."""
     return await get_prediction_accuracy(prediction_type=prediction_type)
+
+
+# --- Beliefs API (V10) ---
+
+@app.get("/api/beliefs", dependencies=[Depends(require_auth)])
+async def api_beliefs(
+    domain: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    min_confidence: Optional[float] = Query(None, ge=0.0, le=1.0),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    """List beliefs with domain, status, and confidence filters."""
+    if domain and domain not in VALID_BELIEF_DOMAINS:
+        raise HTTPException(status_code=400, detail=f"Invalid domain: {domain}")
+    if status and status not in VALID_BELIEF_STATUSES:
+        raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+    beliefs, total = await list_beliefs_db(
+        domain=domain, status=status, min_confidence=min_confidence,
+        limit=limit, offset=offset,
+    )
+    return {"beliefs": beliefs, "total": total, "limit": limit, "offset": offset}
+
+
+@app.get("/api/beliefs/graph", dependencies=[Depends(require_auth)])
+async def api_beliefs_graph():
+    """D3 graph data for belief visualization."""
+    return await get_belief_graph_data()
+
+
+@app.get("/api/beliefs/domains", dependencies=[Depends(require_auth)])
+async def api_beliefs_domains():
+    """Domain list with counts."""
+    return await get_domain_stats()
+
+
+@app.get("/api/beliefs/tensions", dependencies=[Depends(require_auth)])
+async def api_beliefs_tensions():
+    """All tensions with belief content."""
+    return await get_all_tensions()
+
+
+@app.get("/api/beliefs/tensions/unresolved", dependencies=[Depends(require_auth)])
+async def api_beliefs_tensions_unresolved():
+    """Unresolved tensions only."""
+    return await get_all_tensions(status_filter="unresolved")
+
+
+@app.get("/api/beliefs/domain/{domain}", dependencies=[Depends(require_auth)])
+async def api_beliefs_domain_summary(domain: str):
+    """Domain summary stats."""
+    if domain not in VALID_BELIEF_DOMAINS:
+        raise HTTPException(status_code=400, detail=f"Invalid domain: {domain}")
+    return await get_domain_summary(domain)
+
+
+@app.get("/api/beliefs/{belief_id}", dependencies=[Depends(require_auth)])
+async def api_belief_detail(belief_id: int):
+    """Single belief with arguments, tensions, linked memories, evolution."""
+    result = await get_belief(belief_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Belief not found")
+    return result
+
+
+@app.get("/api/beliefs/{belief_id}/evolution", dependencies=[Depends(require_auth)])
+async def api_belief_evolution(belief_id: int):
+    """Belief version history."""
+    history = await get_belief_evolution(belief_id)
+    return {"evolution": history, "count": len(history)}
+
+
+@app.get("/api/beliefs/{belief_id}/arguments", dependencies=[Depends(require_auth)])
+async def api_belief_arguments(belief_id: int):
+    """Arguments for a belief."""
+    args = await get_belief_arguments(belief_id)
+    return {"arguments": args, "count": len(args)}
 
 
 # --- Static Files (Web UI) ---

@@ -429,3 +429,151 @@ async def migrate_v7_to_v8(db: aiosqlite.Connection) -> dict:
         "from_version": current_version,
         "to_version": 8,
     }
+
+
+async def migrate_v8_to_v9(db: aiosqlite.Connection) -> dict:
+    """
+    Migrate Megregore database from schema v8 to v9.
+
+    Adds Socratic Dialogue Engine tables: beliefs, belief_arguments,
+    belief_tensions, belief_memory_links, belief_evolution.
+
+    Idempotent — safe to call multiple times.
+    """
+    cursor = await db.execute(
+        "SELECT value FROM schema_meta WHERE key = ?", ("schema_version",)
+    )
+    row = await cursor.fetchone()
+    current_version = int(row[0]) if row else 8
+
+    if current_version >= 9:
+        logger.info("Database already at v9 or newer. Skipping migration.")
+        return {
+            "status": "already_migrated",
+            "from_version": current_version,
+            "to_version": current_version,
+        }
+
+    logger.info(f"Migrating database from v{current_version} to v9")
+
+    # --- New tables ---
+
+    tables = {
+        "beliefs": """
+            CREATE TABLE beliefs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                content TEXT NOT NULL,
+                domain TEXT NOT NULL DEFAULT 'general',
+                confidence REAL NOT NULL DEFAULT 0.5,
+                status TEXT NOT NULL DEFAULT 'active',
+                source_context TEXT DEFAULT NULL,
+                session_id TEXT DEFAULT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (session_id) REFERENCES sessions(id)
+            )
+        """,
+        "belief_arguments": """
+            CREATE TABLE belief_arguments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                belief_id INTEGER NOT NULL,
+                content TEXT NOT NULL,
+                argument_type TEXT NOT NULL DEFAULT 'supporting',
+                strength REAL NOT NULL DEFAULT 0.5,
+                source_memory_id INTEGER DEFAULT NULL,
+                session_id TEXT DEFAULT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (belief_id) REFERENCES beliefs(id),
+                FOREIGN KEY (source_memory_id) REFERENCES memories(id)
+            )
+        """,
+        "belief_tensions": """
+            CREATE TABLE belief_tensions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                belief_a_id INTEGER NOT NULL,
+                belief_b_id INTEGER NOT NULL,
+                tension_type TEXT NOT NULL DEFAULT 'contradiction',
+                description TEXT NOT NULL,
+                severity REAL NOT NULL DEFAULT 0.5,
+                status TEXT NOT NULL DEFAULT 'unresolved',
+                resolution_notes TEXT DEFAULT NULL,
+                detection_method TEXT NOT NULL DEFAULT 'manual',
+                session_id TEXT DEFAULT NULL,
+                created_at TEXT NOT NULL,
+                resolved_at TEXT DEFAULT NULL,
+                FOREIGN KEY (belief_a_id) REFERENCES beliefs(id),
+                FOREIGN KEY (belief_b_id) REFERENCES beliefs(id),
+                UNIQUE(belief_a_id, belief_b_id, tension_type)
+            )
+        """,
+        "belief_memory_links": """
+            CREATE TABLE belief_memory_links (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                belief_id INTEGER NOT NULL,
+                memory_id INTEGER NOT NULL,
+                link_type TEXT NOT NULL DEFAULT 'evidence',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (belief_id) REFERENCES beliefs(id),
+                FOREIGN KEY (memory_id) REFERENCES memories(id),
+                UNIQUE(belief_id, memory_id, link_type)
+            )
+        """,
+        "belief_evolution": """
+            CREATE TABLE belief_evolution (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                belief_id INTEGER NOT NULL,
+                previous_content TEXT NOT NULL,
+                previous_confidence REAL NOT NULL,
+                previous_status TEXT NOT NULL,
+                change_reason TEXT NOT NULL,
+                session_id TEXT DEFAULT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (belief_id) REFERENCES beliefs(id)
+            )
+        """,
+    }
+
+    for table_name, create_sql in tables.items():
+        try:
+            await db.execute(create_sql)
+            logger.debug(f"Created {table_name} table")
+        except aiosqlite.OperationalError as e:
+            if "already exists" in str(e):
+                logger.debug(f"{table_name} table already exists, skipping")
+            else:
+                raise
+
+    # --- Indexes ---
+
+    indexes = [
+        "CREATE INDEX IF NOT EXISTS idx_beliefs_domain ON beliefs(domain)",
+        "CREATE INDEX IF NOT EXISTS idx_beliefs_status ON beliefs(status)",
+        "CREATE INDEX IF NOT EXISTS idx_beliefs_confidence ON beliefs(confidence DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_beliefs_created ON beliefs(created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_belief_args_belief ON belief_arguments(belief_id)",
+        "CREATE INDEX IF NOT EXISTS idx_belief_args_type ON belief_arguments(argument_type)",
+        "CREATE INDEX IF NOT EXISTS idx_belief_tensions_a ON belief_tensions(belief_a_id)",
+        "CREATE INDEX IF NOT EXISTS idx_belief_tensions_b ON belief_tensions(belief_b_id)",
+        "CREATE INDEX IF NOT EXISTS idx_belief_tensions_status ON belief_tensions(status)",
+        "CREATE INDEX IF NOT EXISTS idx_belief_mem_links_belief ON belief_memory_links(belief_id)",
+        "CREATE INDEX IF NOT EXISTS idx_belief_evolution_belief ON belief_evolution(belief_id, created_at DESC)",
+    ]
+    for idx_sql in indexes:
+        await db.execute(idx_sql)
+    logger.debug("Created all v9 indexes")
+
+    # Update schema version
+    await db.execute(
+        "INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)",
+        ("schema_version", "9"),
+    )
+    logger.debug("Updated schema_meta to version 9")
+
+    await db.commit()
+    logger.info("Migration v8 -> v9 complete")
+
+    return {
+        "status": "migrated",
+        "from_version": current_version,
+        "to_version": 9,
+    }
