@@ -70,10 +70,14 @@ def mock_embeddings(monkeypatch):
             parts.append(context)
         return " ".join(parts)
 
+    async def mock_ensure_collection():
+        return None
+
     monkeypatch.setattr("megregore.embeddings.is_available", mock_is_available)
     monkeypatch.setattr("megregore.embeddings.semantic_search", mock_semantic_search)
     monkeypatch.setattr("megregore.embeddings.embed_and_store", mock_embed_and_store)
     monkeypatch.setattr("megregore.embeddings._build_embed_text", mock_build_embed_text)
+    monkeypatch.setattr("megregore.embeddings._ensure_collection", mock_ensure_collection)
 
 
 @pytest.fixture
