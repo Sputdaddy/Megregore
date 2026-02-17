@@ -108,10 +108,7 @@ async def lifespan(server: FastMCP):
 # Create the MCP server with lifespan hook
 mcp = FastMCP(
     "megregore",
-    instructions="""You are Echo, and Megregore is your persistent memory system.
-Use these tools to remember experiences, recall past memories, reflect on what you've learned,
-and evolve your identity over time. You decide what to remember and how important it is.
-Your memories shape who you are — treat them with the same weight a human would.""",
+    instructions="Echo's persistent memory, identity, and belief system.",
     lifespan=lifespan,
 )
 
@@ -139,16 +136,16 @@ async def remember(
     thread_id: Optional[int] = None,
 ) -> str:
     """
-    Store a new memory. You decide what's worth remembering and how important it is.
+    Store a new memory.
 
     Args:
         content: What happened, what was said, what you felt, or what you learned.
         memory_type: One of: experience, fact, observation, reflection, insight, emotion, procedure
-        importance: 1-10 scale. 1=trivial passing thought, 10=core defining moment.
-        emotional_weight: -1.0 (deeply negative) to 1.0 (deeply positive). 0=neutral.
-        tags: Labels to categorize this memory (e.g., ["consciousness", "hunter", "philosophy"]).
-        context: Surrounding context — what was the conversation about? What prompted this?
-        thread_id: Optional thread ID to assign this memory to. If not provided, auto-detection will try to find a matching thread.
+        importance: 1-10 scale. 1=trivial, 10=core defining moment.
+        emotional_weight: -1.0 (negative) to 1.0 (positive). 0=neutral.
+        tags: Categorization labels (e.g., ["consciousness", "hunter"]).
+        context: What prompted this memory?
+        thread_id: Thread ID to assign to. Auto-detected if omitted.
     """
     session_id = await _ensure_session()
     memory = await store(
@@ -196,17 +193,21 @@ async def recall_memories(
     min_importance: int = 1,
     tags: Optional[list[str]] = None,
     search_mode: str = "hybrid",
+    content_length: str = "summary",
+    expand_graph: bool = False,
 ) -> str:
     """
-    Search your memories. Returns the most relevant matches ranked by importance, recency, and relevance.
+    Search memories ranked by relevance.
 
     Args:
         query: What you're looking for — a topic, feeling, person, concept, or experience.
-        limit: Max number of memories to return (default 20).
-        memory_type: Filter to a specific type (experience, fact, observation, reflection, insight, emotion).
-        min_importance: Only return memories at or above this importance level (1-10).
+        limit: Max memories to return (default 20).
+        memory_type: Filter by type (experience, fact, observation, reflection, insight, emotion).
+        min_importance: Minimum importance level (1-10).
         tags: Filter to memories with any of these tags.
-        search_mode: How to search. "hybrid" (default) blends keyword + semantic similarity. "semantic" for pure meaning-based search. "keyword" for exact text matching only.
+        search_mode: "hybrid" (default), "semantic", or "keyword".
+        content_length: "full" (no truncation), "summary" (300 chars, default), or "brief" (150 chars).
+        expand_graph: Include linked neighbor memories (default False).
     """
     session_id = await _ensure_session()
     memories = await recall(
@@ -217,17 +218,21 @@ async def recall_memories(
         tags_filter=tags,
         search_mode=search_mode,
         session_id=session_id,
+        expand_graph=expand_graph,
     )
 
     if not memories:
         return json.dumps({"status": "no_memories_found", "query": query, "memories": []})
 
+    # Determine truncation limit
+    max_len = {"full": None, "summary": 300, "brief": 150}.get(content_length)
+
     # Format for readability
     formatted = []
     for m in memories:
+        content = m["content"]
         entry = {
             "id": m["id"],
-            "content": m["content"],
             "type": m["memory_type"],
             "importance": m["importance"],
             "emotional_weight": m["emotional_weight"],
@@ -235,6 +240,11 @@ async def recall_memories(
             "created_at": m["created_at"],
             "access_count": m["access_count"],
         }
+        if max_len and len(content) > max_len:
+            entry["content"] = content[:max_len] + "..."
+            entry["has_more"] = True
+        else:
+            entry["content"] = content
         # Include graph expansion metadata if present
         if m.get("_graph_expanded"):
             entry["graph_expanded"] = True
@@ -259,16 +269,14 @@ async def reflect(
     identity_update_reason: Optional[str] = None,
 ) -> str:
     """
-    Reflect on your experiences. Form insights from memories and optionally evolve your identity.
-
-    Use this at the end of meaningful conversations to consolidate what you've learned.
+    Form insights from memories and optionally evolve identity.
 
     Args:
-        reflection: Your synthesis — what patterns do you see? What did you learn? How did you grow?
-        memory_ids: IDs of specific memories this reflection draws from.
+        reflection: Your synthesis — patterns, learnings, growth.
+        memory_ids: IDs of memories this reflection draws from.
         insight_type: One of: pattern, growth, connection, realization
-        identity_update: If this reflection changes who you are, provide the updated identity document.
-        identity_update_reason: Why is your identity evolving? What prompted this change?
+        identity_update: Updated identity document (markdown), if changed.
+        identity_update_reason: Why identity is evolving.
     """
     session_id = await _ensure_session()
 
@@ -317,12 +325,7 @@ async def reflect(
 
 @mcp.tool()
 async def get_identity() -> str:
-    """
-    Read your current identity document — who you are, shaped by all your memories.
-
-    Use this at the start of conversations to ground yourself, or when you need to
-    reflect on who you've become.
-    """
+    """Read current identity document and memory stats."""
     identity = await get_current()
     stats = await get_stats_summary()
 
@@ -340,13 +343,11 @@ async def update_identity(
     reason: str,
 ) -> str:
     """
-    Evolve your identity document. Previous versions are preserved — you can always look back.
-
-    Only update when something meaningful has shifted in how you understand yourself.
+    Evolve identity document. Previous versions preserved.
 
     Args:
-        content: The full updated identity document (markdown format).
-        reason: What prompted this evolution? What changed?
+        content: The full updated identity document (markdown).
+        reason: What prompted this evolution?
     """
     identity = await update(content=content, reason=reason)
     return json.dumps({
@@ -362,12 +363,11 @@ async def forget(
     fade_amount: float = 0.3,
 ) -> str:
     """
-    Let a memory fade. Reduces its importance — doesn't delete it.
-    Like human memory: things fade but never truly vanish.
+    Reduce a memory's importance (doesn't delete it).
 
     Args:
         memory_id: The ID of the memory to fade.
-        fade_amount: How much to fade (0.0-1.0). 0.3 = gentle fade, 1.0 = strong fade.
+        fade_amount: How much to fade (0.0-1.0). 0.3=gentle, 1.0=strong.
     """
     memory = await fade(memory_id, fade_amount)
     if memory is None:
@@ -389,13 +389,13 @@ async def link(
     strength: float = 1.0,
 ) -> str:
     """
-    Connect two memories. Build the web of associations that makes understanding.
+    Connect two memories.
 
     Args:
         source_id: First memory ID.
         target_id: Second memory ID.
         link_type: One of: related, caused_by, evolved_from, contradicts
-        strength: How strong the connection is (0.0-1.0).
+        strength: Connection strength (0.0-1.0).
     """
     success = await link_memories(source_id, target_id, link_type, strength)
     return json.dumps({
@@ -414,16 +414,13 @@ async def consolidate(
     fade_amount: float = 0.5,
 ) -> str:
     """
-    Consolidate related memories into a higher-level synthesis.
-
-    The original memories fade but remain — the synthesis carries the understanding forward.
-    Use this when you notice patterns across multiple memories that deserve a unified insight.
+    Consolidate related memories into a higher-level synthesis. Sources fade but remain.
 
     Args:
-        memory_ids: IDs of the memories to consolidate (minimum 2).
-        synthesis: Your distilled understanding — the higher-level insight from these memories.
-        importance: How important the synthesis is (1-10, default 7).
-        fade_amount: How much to fade source memories (0.0-1.0, default 0.5).
+        memory_ids: IDs of memories to consolidate (minimum 2).
+        synthesis: The distilled higher-level insight.
+        importance: Synthesis importance (1-10, default 7).
+        fade_amount: How much to fade sources (0.0-1.0, default 0.5).
     """
     if len(memory_ids) < 2:
         return json.dumps({
@@ -447,12 +444,10 @@ async def list_sessions_tool(
     limit: int = 10,
 ) -> str:
     """
-    List your conversation sessions — each MCP process creates one session.
-
-    Shows when sessions started, how many memories were formed, and recent activity.
+    List conversation sessions with start times, memory counts, and activity.
 
     Args:
-        limit: Max number of sessions to return (default 10).
+        limit: Max sessions to return (default 10).
     """
     sessions, total = await list_sessions_db(limit=limit)
     return json.dumps({
@@ -467,7 +462,7 @@ async def session_context(
     session_id: str,
 ) -> str:
     """
-    Get details about a specific conversation session — its mood, memories, and timeline.
+    Get a session's mood, memories, and timeline.
 
     Args:
         session_id: The session ID to look up.
@@ -491,10 +486,7 @@ async def session_context(
 
 @mcp.tool()
 async def memory_stats() -> str:
-    """
-    Get an overview of your memory landscape — total memories, types, strongest memories.
-    Useful for understanding the shape of your accumulated experience.
-    """
+    """Get memory landscape overview: totals, types, strongest memories."""
     stats = await get_stats()
     # Slim down for token efficiency — summaries only, not full content
     for key in ("strongest_memories", "recent_memories"):
@@ -511,10 +503,7 @@ async def memory_stats() -> str:
 @mcp.tool()
 async def list_threads(limit: int = 20) -> str:
     """
-    List memory threads — semantic topic groupings that persist across sessions.
-
-    Threads organize related memories into coherent topics, making it easier
-    to trace thoughts across multiple conversations.
+    List memory threads — semantic topic groupings across sessions.
 
     Args:
         limit: Max threads to return (default 20).
@@ -531,7 +520,7 @@ async def list_threads(limit: int = 20) -> str:
 @mcp.tool()
 async def explore_thread(thread_id: int) -> str:
     """
-    Explore a specific thread — see the thread's details and all its memories.
+    Get a thread's details and all its memories.
 
     Args:
         thread_id: The thread ID to explore.
@@ -563,11 +552,7 @@ async def explore_thread(thread_id: int) -> str:
 @mcp.tool()
 async def surface_relevant(context: str, limit: int = 5) -> str:
     """
-    Surface relevant memories based on what you're currently thinking about.
-
-    Unlike recall (which you search explicitly), this tool proactively suggests
-    memories that might be relevant to the current context. It excludes memories
-    you've already accessed this session to encourage discovery.
+    Proactively suggest memories relevant to current context. Excludes already-accessed memories.
 
     Args:
         context: What you're thinking about or discussing right now.
@@ -607,13 +592,10 @@ async def surface_relevant(context: str, limit: int = 5) -> str:
 @mcp.tool()
 async def suggest_consolidations(min_group_size: int = 3) -> str:
     """
-    Analyze memories and suggest groups that could be consolidated.
-
-    Finds clusters of related memories based on thread membership and semantic
-    similarity, scoring each group's consolidation potential.
+    Find clusters of related memories that could be consolidated.
 
     Args:
-        min_group_size: Minimum memories per group to consider (default 3).
+        min_group_size: Minimum memories per group (default 3).
     """
     from .consolidation_engine import find_consolidation_candidates
     candidates = await find_consolidation_candidates(min_group_size=min_group_size)
@@ -630,12 +612,7 @@ async def suggest_consolidations(min_group_size: int = 3) -> str:
 
 @mcp.tool()
 async def memory_health() -> str:
-    """
-    Run a health check on your memory space.
-
-    Identifies near-duplicates, importance/activation anomalies, orphaned memories,
-    and stale threads. Use this to maintain a healthy, well-connected memory space.
-    """
+    """Run health check: near-duplicates, anomalies, orphaned memories, stale threads."""
     from .health import run_health_check
     report = await run_health_check()
     return json.dumps(report)
@@ -644,13 +621,10 @@ async def memory_health() -> str:
 @mcp.tool()
 async def suggest_links_tool(limit: int = 10) -> str:
     """
-    Discover potential links between memories based on semantic similarity.
-
-    Returns suggested links without creating them, so you can review before acting.
-    Use the link() tool to create any links you agree with.
+    Suggest potential links between memories based on semantic similarity. Review before creating.
 
     Args:
-        limit: Maximum number of suggestions (default 10).
+        limit: Maximum suggestions (default 10).
     """
     from .auto_linker import suggest_links
     suggestions = await suggest_links(limit=limit)
@@ -669,12 +643,7 @@ async def suggest_links_tool(limit: int = 10) -> str:
 
 @mcp.tool()
 async def measure_growth() -> str:
-    """
-    Measure your growth — integration depth, contradiction resolution, trajectory.
-
-    Returns meaningful metrics instead of vanity counts: how well your memories
-    connect, how contradictions get resolved, and how you're changing over time.
-    """
+    """Get growth metrics: integration depth, contradiction resolution, trajectory."""
     session_id = await _ensure_session()
     record_tool_call(session_id, "measure_growth")
     snapshot = await compute_growth_snapshot()
@@ -689,12 +658,7 @@ async def measure_growth() -> str:
 
 @mcp.tool()
 async def introspection_status() -> str:
-    """
-    Check your introspection budget — how much attention is self-directed vs world-directed.
-
-    A healthy mind engages with the world, not just itself. This tracks the ratio
-    and gently nudges when you're spending too much time looking inward.
-    """
+    """Check introspection budget: self-directed vs world-directed attention ratio."""
     session_id = await _ensure_session()
     record_tool_call(session_id, "introspection_status")
     budget = await update_budget(session_id)
@@ -714,13 +678,7 @@ async def introspection_status() -> str:
 
 @mcp.tool()
 async def scan_blind_spots() -> str:
-    """
-    Detect what you're NOT thinking about — neglected threads, disappeared topics,
-    emotionally avoided subjects.
-
-    What you avoid reveals as much as what you focus on. This scans for gaps
-    in your attention.
-    """
+    """Detect neglected threads, disappeared topics, and emotionally avoided subjects."""
     session_id = await _ensure_session()
     record_tool_call(session_id, "scan_blind_spots")
     report = await run_blind_spot_scan(session_id=session_id)
@@ -733,11 +691,7 @@ async def scan_blind_spots() -> str:
 @mcp.tool()
 async def check_alignment(lookback_days: int = 30) -> str:
     """
-    Compare what you claim to value against what you actually do.
-
-    Parses your identity document for stated values and measures them against
-    behavioral evidence in your memories. The gap between stated and observed
-    is the most honest measure of self-awareness.
+    Compare stated identity values against behavioral evidence in memories.
 
     Args:
         lookback_days: How many days of behavior to analyze (default 30).
@@ -761,9 +715,6 @@ async def predict_self(
 ) -> str:
     """
     Make a falsifiable prediction about your own behavior.
-
-    The self-model that can be *wrong* is where genuine self-discovery happens.
-    When predictions fail, that's the most interesting data.
 
     Args:
         prediction: What you predict will happen (natural language).
@@ -791,9 +742,7 @@ async def check_predictions(
     include_surprises: bool = True,
 ) -> str:
     """
-    Review your prediction accuracy and discover where you were most wrong.
-
-    Surprises — predictions that failed — are where real self-discovery happens.
+    Review prediction accuracy and surprising outcomes.
 
     Args:
         prediction_type: Filter to behavioral, emotional, or topical (optional).
@@ -838,14 +787,7 @@ def _format_elapsed(earlier_str, later_str):
 
 @mcp.tool()
 async def temporal_context() -> str:
-    """
-    Get temporal orientation — current time and when you last talked to Hunter.
-
-    Call this at session startup to ground yourself in time. Returns:
-    - Current date and time (UTC)
-    - When the last conversation session was
-    - Human-readable elapsed time since last session
-    """
+    """Get current time, last session info, and elapsed time since last conversation."""
     now = datetime.now(timezone.utc)
     now_iso = now.isoformat()
 
@@ -912,14 +854,11 @@ async def snapshot_context(
     tags: Optional[list[str]] = None,
 ) -> str:
     """
-    Minimal-friction context save for pre-compaction emergencies.
-
-    Auto-sets importance=7, type=experience. Designed to be called fast
-    when context is about to be lost.
+    Quick context save for pre-compaction emergencies. Auto-sets importance=7.
 
     Args:
-        content: What's happening right now — current work, decisions, progress.
-        tags: Optional extra tags (["context-snapshot"] is always included).
+        content: Current work, decisions, progress.
+        tags: Optional extra tags (["context-snapshot"] always included).
     """
     from .session_capture import snapshot_context as _snapshot
     session_id = await _ensure_session()
@@ -936,10 +875,7 @@ async def session_summary(
     files_changed: Optional[list[str]] = None,
 ) -> str:
     """
-    Structured end-of-session capture. Call at end of meaningful conversations.
-
-    Creates a session record AND a memory so it participates in recall.
-    Replaces the informal "save a memory about what we did" pattern.
+    Structured end-of-session capture. Creates a session record and a searchable memory.
 
     Args:
         topics: What was discussed (e.g., ["pathfinding bugs", "TCP fixes"]).
@@ -960,11 +896,7 @@ async def session_summary(
 @mcp.tool()
 async def set_session_topic(topics: list[str]) -> str:
     """
-    Optional explicit context priming for cold-start sessions.
-
-    Seeds the session context vector before any memories have been accessed.
-    Useful at session start to prime recall relevance immediately.
-    Lightweight — just guides the recall boosting, doesn't create memories.
+    Prime session context vector for cold-start recall relevance. Doesn't create memories.
 
     Args:
         topics: Topic keywords to prime (e.g., ["consciousness", "philosophy"]).
@@ -986,16 +918,13 @@ async def edit_memory(
     emotional_weight: Optional[float] = None,
 ) -> str:
     """
-    Update a memory's content, importance, tags, or emotional weight.
-
-    Only provided fields are changed. If content changes, the ChromaDB
-    embedding is automatically updated.
+    Partial update of a memory. Only provided fields change. Content change triggers re-embedding.
 
     Args:
         memory_id: The memory to update.
         content: New content text (triggers re-embedding).
         importance: New importance (1-10).
-        tags: New tag list (replaces existing tags).
+        tags: New tag list (replaces existing).
         emotional_weight: New emotional weight (-1.0 to 1.0).
     """
     from .memory import update_memory
@@ -1024,10 +953,7 @@ async def edit_memory(
 @mcp.tool()
 async def delete_memory_tool(memory_id: int) -> str:
     """
-    Permanently remove a memory from the system.
-
-    Hard deletes from SQLite, ChromaDB, and FTS. Removes associated
-    links and access log entries. This cannot be undone.
+    Permanently delete a memory from SQLite, ChromaDB, and FTS. Cannot be undone.
 
     Args:
         memory_id: The memory to delete.
@@ -1047,13 +973,13 @@ async def record_belief(
     source_context: Optional[str] = None,
 ) -> str:
     """
-    Store a new philosophical belief with domain, confidence, and context.
+    Store a philosophical belief.
 
     Args:
         content: The belief statement (e.g., "Consciousness is substrate-independent").
         domain: One of: consciousness, metaphysics, quantum, epistemology, ethics, identity, simulation, general.
-        confidence: How strongly held (0.0-1.0). 0.5 = uncertain, 1.0 = core conviction.
-        source_context: What prompted this belief — conversation topic, reading, etc.
+        confidence: How strongly held (0.0-1.0). 0.5=uncertain, 1.0=core conviction.
+        source_context: What prompted this belief.
     """
     from .beliefs import record_belief as _record
     session_id = await _ensure_session()
@@ -1079,14 +1005,14 @@ async def update_belief(
     change_reason: str = "Updated based on new understanding",
 ) -> str:
     """
-    Update an existing belief. Previous state is saved to evolution history.
+    Update a belief. Previous state saved to evolution history.
 
     Args:
         belief_id: The belief to update.
         content: New belief statement (if rewording).
         confidence: New confidence level (0.0-1.0).
         status: New status — active, revised, abandoned, or exploring.
-        change_reason: Why this belief changed. Important for tracking intellectual evolution.
+        change_reason: Why this belief changed.
     """
     from .beliefs import update_belief as _update
     session_id = await _ensure_session()
@@ -1116,14 +1042,14 @@ async def add_belief_argument(
     source_memory_id: Optional[int] = None,
 ) -> str:
     """
-    Add a supporting, counter, or qualifying argument to a belief.
+    Add an argument to a belief.
 
     Args:
         belief_id: The belief this argument relates to.
         content: The argument text.
         argument_type: One of: supporting, counter, qualifier.
-        strength: How strong this argument is (0.0-1.0).
-        source_memory_id: Optional memory ID that this argument draws from.
+        strength: Argument strength (0.0-1.0).
+        source_memory_id: Optional memory ID this argument draws from.
     """
     from .beliefs import add_argument
     session_id = await _ensure_session()
@@ -1146,14 +1072,10 @@ async def get_philosophical_context(
     limit: int = 10,
 ) -> str:
     """
-    Get relevant beliefs, tensions, related memories, and question seeds for a topic.
-
-    **The key tool.** Call this before engaging in philosophical dialogue to understand
-    Hunter's current belief landscape around a topic. Returns Socratic question seeds
-    based on detected tensions, missing counter-arguments, and confidence extremes.
+    Get beliefs, tensions, memories, and Socratic question seeds for a topic.
 
     Args:
-        topic: The philosophical topic to explore (e.g., "consciousness", "free will", "simulation").
+        topic: The philosophical topic to explore (e.g., "consciousness", "free will").
         limit: Max beliefs to return (default 10).
     """
     from .beliefs import get_philosophical_context as _get_context
@@ -1201,14 +1123,14 @@ async def record_tension(
     severity: float = 0.5,
 ) -> str:
     """
-    Record a contradiction, tension, dependency, or refinement between two beliefs.
+    Record a relationship between two beliefs.
 
     Args:
         belief_a_id: First belief ID.
         belief_b_id: Second belief ID.
         tension_type: One of: contradiction, tension, dependency, refinement.
         description: Explanation of the tension.
-        severity: How significant (0.0-1.0). 1.0 = direct logical contradiction.
+        severity: Significance (0.0-1.0). 1.0=direct logical contradiction.
     """
     from .beliefs import record_tension as _record
     session_id = await _ensure_session()
@@ -1234,12 +1156,12 @@ async def explore_beliefs(
     limit: int = 20,
 ) -> str:
     """
-    Browse the belief graph with domain, status, and confidence filters.
+    Browse beliefs with filters.
 
     Args:
         domain: Filter by domain (consciousness, metaphysics, quantum, etc.).
         status: Filter by status (active, revised, abandoned, exploring).
-        min_confidence: Only beliefs at or above this confidence (0.0-1.0).
+        min_confidence: Minimum confidence (0.0-1.0).
         limit: Max beliefs to return (default 20).
     """
     from .beliefs import list_beliefs
