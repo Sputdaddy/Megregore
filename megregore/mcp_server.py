@@ -1199,7 +1199,9 @@ async def explore_beliefs(
 
 def main():
     """Entry point for the MCP server. Database auto-initializes on first tool call."""
-    mcp.run(transport="stdio")
+    import os
+    transport = os.environ.get("MCP_TRANSPORT", "stdio")
+    mcp.run(transport=transport)
 
 
 if __name__ == "__main__":

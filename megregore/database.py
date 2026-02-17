@@ -9,8 +9,8 @@ from pathlib import Path
 from datetime import datetime, timezone
 from typing import Optional
 
-# Database lives in the data/ directory next to the package
-DB_DIR = Path(__file__).parent.parent / "data"
+# Database lives in the data/ directory next to the package, configurable via env var
+DB_DIR = Path(os.environ.get("MEGREGORE_DATA_DIR", str(Path(__file__).parent.parent / "data")))
 DB_PATH = DB_DIR / "megregore.db"
 
 SCHEMA_VERSION = 10

@@ -6,7 +6,14 @@ Usage:
     python -m megregore web          # Run web UI server (open localhost:3000)
     python -m megregore backfill     # Embed all existing memories into ChromaDB
 """
+import logging
 import sys
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="[megregore] %(asctime)s %(levelname)s: %(message)s",
+    stream=sys.stderr,
+)
 
 
 def main():

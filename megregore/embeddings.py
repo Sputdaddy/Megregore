@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -17,7 +18,7 @@ _available = None  # None = not yet checked, True/False after first attempt
 
 MODEL_NAME = "all-MiniLM-L6-v2"
 COLLECTION_NAME = "megregore_memories"
-CHROMA_DIR = Path(__file__).parent.parent / "data" / "chroma"
+CHROMA_DIR = Path(os.environ.get("MEGREGORE_DATA_DIR", str(Path(__file__).parent.parent / "data"))) / "chroma"
 
 
 def _load_model():

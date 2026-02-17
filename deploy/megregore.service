@@ -1,0 +1,25 @@
+[Unit]
+Description=Megregore MCP Server (Echo's Memory)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hunter
+WorkingDirectory=/home/hunter/Megregore
+ExecStart=/home/hunter/Megregore/venv/bin/python -m megregore mcp
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=120
+
+Environment=MCP_TRANSPORT=streamable-http
+Environment=FASTMCP_HOST=0.0.0.0
+Environment=FASTMCP_PORT=8100
+Environment=MEGREGORE_DATA_DIR=/home/hunter/Megregore/data
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=megregore
+
+[Install]
+WantedBy=multi-user.target
