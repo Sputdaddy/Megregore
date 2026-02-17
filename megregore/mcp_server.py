@@ -126,6 +126,18 @@ async def _ensure_session() -> str:
 
 
 @mcp.tool()
+async def session_start() -> str:
+    """
+    Initialize a session. Returns identity, temporal context, recent/important memories,
+    and last session summary in a single call. Use at conversation start.
+    """
+    session_id = await _ensure_session()
+    from .session_startup import build_session_start
+    result = await build_session_start(session_id)
+    return json.dumps(result)
+
+
+@mcp.tool()
 async def remember(
     content: str,
     memory_type: str = "experience",
