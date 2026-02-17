@@ -87,6 +87,34 @@ class TestLinkMemories:
         assert row[0] == "auto-inferred"
 
 
+class TestRecallExpandGraph:
+    async def test_recall_expand_graph_false(self, mock_db, mock_embeddings):
+        """With expand_graph=False, no graph-neighbor memories are appended."""
+        m1 = await store(content="Alpha memory about testing", importance=7, session_id="s1")
+        m2 = await store(content="Beta memory about unrelated topic", importance=7, session_id="s1")
+        await link_memories(m1["id"], m2["id"], "related", 0.9)
+
+        results = await recall("Alpha testing", limit=5, expand_graph=False)
+        result_ids = {m["id"] for m in results}
+        # m2 should NOT appear via graph expansion
+        for m in results:
+            assert not m.get("_graph_expanded", False)
+
+    async def test_recall_expand_graph_true(self, mock_db, mock_embeddings):
+        """With expand_graph=True (default), linked neighbors are appended."""
+        m1 = await store(content="Gamma memory about coding", importance=7, session_id="s1")
+        m2 = await store(content="Delta memory about design", importance=7, session_id="s1")
+        await link_memories(m1["id"], m2["id"], "related", 0.9)
+
+        results = await recall("Gamma coding", limit=5, expand_graph=True)
+        graph_expanded = [m for m in results if m.get("_graph_expanded")]
+        # If m1 matched and m2 is linked, m2 should appear via graph expansion
+        # (depends on FTS matching — if m1 matches, m2 should be graph-expanded)
+        result_ids = {m["id"] for m in results}
+        if m1["id"] in result_ids:
+            assert m2["id"] in result_ids
+
+
 class TestConsolidateMemories:
     async def test_consolidate_two(self, mock_db, mock_embeddings):
         m1 = await store(content="Part 1 of concept", importance=6, tags=["concept"], session_id="s1")

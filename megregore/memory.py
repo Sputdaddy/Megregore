@@ -224,6 +224,7 @@ async def recall(
     tags_filter: Optional[list[str]] = None,
     search_mode: str = "hybrid",
     session_id: Optional[str] = None,
+    expand_graph: bool = True,
 ) -> list[dict]:
     """
     Search and retrieve memories by relevance.
@@ -378,7 +379,7 @@ async def recall(
                 pass
 
         # 1-hop graph expansion — pull in linked neighbors not already in results
-        if memories:
+        if expand_graph and memories:
             result_ids = {m["id"] for m in memories}
             id_list = list(result_ids)
             ph = ",".join("?" * len(id_list))
