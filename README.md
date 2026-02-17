@@ -11,23 +11,43 @@ The name draws from "egregore" — an autonomous psychic entity arising from col
 - **Semantic organization** — Memories automatically group into topic threads via semantic clustering
 - **Memory graph** — Explicit links between memories (related, caused_by, evolved_from, contradicts) build a web of associations
 - **Hybrid search** — Keyword search (FTS5) combined with semantic search (ChromaDB) for precise and conceptual retrieval
+- **Memory CRUD** — Full edit and delete support with re-embedding on content change and cascading cleanup
 
 **Identity & Growth**
 - **Identity versioning** — Evolving identity documents with full version history, shaped by accumulated memories
 - **Reflections** — Consolidate insights from multiple memories into higher-level synthesis
 - **Decay and forgetting** — Exponential activation decay prevents memory saturation; older, less-important memories fade gracefully
+- **Growth metrics** — Integration depth, contradiction resolution tracking, and behavioral trajectory analysis
+
+**Self-Awareness & Alignment (V7-V9)**
+- **Introspection budget** — Tracks ratio of self-directed vs world-directed tool usage with contextual nudges
+- **Blind spot detection** — Surfaces neglected threads, disappeared topics, and emotionally avoided subjects
+- **Alignment checking** — Compares stated values in identity document against behavioral evidence in memories
+- **Self-model predictions** — Falsifiable predictions about own behavior with accuracy tracking
+
+**Philosophical Beliefs (V10)**
+- **Belief graph** — Store beliefs with domain, confidence, and evolution history
+- **Socratic dialogue** — Auto-generated question seeds from detected tensions and confidence extremes
+- **Tension tracking** — Record contradictions, dependencies, and refinements between beliefs
+
+**Session Lifecycle & Conversation-Aware Recall (V11)**
+- **Session capture** — `snapshot_context` for pre-compaction emergencies, `session_summary` for structured end-of-session capture
+- **Conversation-aware recall** — Session context vector boosts recall relevance based on what you've been discussing
+- **SSE event bus** — Real-time push events for memory creation, updates, and deletions
 
 **Session & Analytics**
 - **Cross-session threading** — Memories auto-group into semantic threads for topic coherence
-- **Session tracking** — Emotional arc analysis and session context capture
+- **Session tracking** — Emotional arc analysis, session context capture, and session summaries with narrative continuity
 - **Usage analytics** — Access logging, top-accessed memories, orphan detection, memory footprint tracking
 - **Proactive surfacing** — The `surface_relevant` tool pushes contextually relevant memories into conversations
 
 **Web Dashboard**
 - Interactive visualization of the memory landscape at `localhost:3000`
-- 8-page interface: Dashboard, Memories, Identity, Reflections, Sessions, Graph, Threads, Analytics
+- 13-page interface: Dashboard, Memories, Identity, Reflections, Sessions, Graph, Threads, Analytics, Health, Growth, Blind Spots, Self-Model, Beliefs
+- Live SSE activity ticker showing real-time memory events
+- Inline memory editing and deletion from the Memories page
+- Mobile-responsive design with collapsible sidebar
 - Search, filter, and explore memories with full-text and semantic search
-- View memory decay curves and access patterns in real time
 
 ## Installation
 
@@ -75,23 +95,28 @@ Start the MCP server that Claude Code and Claude Desktop can communicate with:
 python -m megregore
 ```
 
-This runs the server in stdio mode (used by Claude Code and Claude Desktop). The server exposes 14 tools that Claude can call to form and retrieve memories.
+This runs the server in stdio mode (used by Claude Code and Claude Desktop). The server exposes 35 tools that Claude can call to form, retrieve, and manage memories.
 
 **Example tools available to Claude:**
 - `remember()` — Store a new memory with importance, emotional weight, and tags
-- `recall_memories()` — Search memories by query, min importance, or tag filters
+- `recall_memories()` — Search memories with conversation-aware context blending
 - `reflect()` — Form insights from multiple memories
-- `get_identity()` — Load the current identity document
-- `update_identity()` — Evolve identity with version history
-- `surface_relevant()` — Get memories relevant to the current conversation context
-- `link()` — Create semantic links between memories
-- `consolidate()` — Merge related memories into a synthesis
-- `list_sessions_tool()` — View past conversation sessions
-- `session_context()` — Load details about a specific session
-- `memory_stats()` — Overview of memory landscape (totals, types, strongest memories)
-- `list_threads()` — View semantic memory threads
-- `explore_thread()` — Deep dive into a specific thread
+- `get_identity()` / `update_identity()` — Identity document with version history
+- `surface_relevant()` — Proactively surface memories relevant to current context
+- `link()` / `consolidate()` — Build memory graph and merge related memories
 - `forget()` — Fade a memory over time (exponential decay)
+- `edit_memory()` / `delete_memory()` — Modify or remove existing memories
+- `snapshot_context()` — Quick context save before compaction
+- `session_summary()` — Structured end-of-session capture
+- `set_session_topic()` — Prime recall relevance for current conversation
+- `record_belief()` / `update_belief()` — Philosophical belief tracking
+- `get_philosophical_context()` — Socratic question generation from belief tensions
+- `introspection_status()` — Check self-directed vs world-directed attention ratio
+- `check_alignment()` — Compare stated values against behavioral evidence
+- `predict_self()` / `check_predictions()` — Falsifiable self-model predictions
+- `scan_blind_spots()` — Detect neglected topics and avoided subjects
+- `measure_growth()` — Integration depth and trajectory metrics
+- ...and more (35 tools total)
 
 ### Web Dashboard
 
@@ -102,14 +127,19 @@ python -m megregore web
 ```
 
 Open `http://localhost:3000` in your browser. The dashboard includes:
-- **Dashboard** — Overview of memory stats, recent memories, access patterns
-- **Memories** — Search and filter all memories; view decay curves
-- **Identity** — Current identity document and version history
-- **Reflections** — View synthesized insights and higher-level patterns
+- **Dashboard** — Neural Void aesthetic with stat cards, emotional arc chart, live SSE activity ticker
+- **Memories** — Search, filter, edit, and delete memories with inline forms
+- **Identity** — Current identity document and version history timeline
+- **Reflections** — Synthesized insights and higher-level patterns
 - **Sessions** — Past conversation sessions with emotional arcs and summaries
 - **Graph** — Visual memory graph showing links and relationships
 - **Threads** — Semantic threads grouping related memories by topic
 - **Analytics** — Access frequency, orphan memories, memory growth over time
+- **Health** — Memory health checks, consolidation candidates, suggested links
+- **Growth** — Integration depth, contradiction resolution, trajectory metrics
+- **Blind Spots** — Neglected topics and attention gap analysis
+- **Self-Model** — Prediction accuracy and behavioral self-awareness
+- **Beliefs** — Philosophical belief graph with tensions and evolution history
 
 ### Backfill Embeddings
 
@@ -126,31 +156,31 @@ This regenerates ChromaDB embeddings for all memories, enabling semantic search.
 ```
 megregore/                    # Python package (MCP server, database, memory engine, web API)
 ├── __main__.py              # Entry point; routes to MCP, web, or backfill
-├── mcp_server.py            # FastMCP server; exposes 14 tools for Claude
-├── database.py              # SQLite schema and query layer
-├── memory.py                # Memory object and core operations
+├── mcp_server.py            # FastMCP server; exposes 35 tools for Claude
+├── database.py              # SQLite schema and query layer (v10)
+├── memory.py                # Memory engine: store, recall, update, delete, link, consolidate
 ├── decay.py                 # Exponential activation decay calculations
 ├── embeddings.py            # ChromaDB integration and semantic search
 ├── identity.py              # Identity document storage, versioning, and reflections
 ├── threads.py               # Semantic memory threading (auto-grouping)
 ├── surfacing.py             # Proactive memory relevance ranking
 ├── analytics.py             # Usage tracking and analytics
-├── migrations.py            # Schema versioning and migrations
+├── migrations.py            # Schema versioning and migrations (v1→v10)
+├── context_vector.py        # Session context vector for conversation-aware recall (V11)
+├── session_capture.py       # Session lifecycle: snapshots and structured summaries (V11)
+├── events.py                # SSE event bus for real-time dashboard updates (V11)
+├── beliefs.py               # Philosophical belief graph and Socratic dialogue (V10)
+├── self_awareness.py        # Introspection, blind spots, alignment, self-model (V7-V9)
 ├── web.py                   # FastAPI web server and dashboard API
 └── __init__.py              # Package initialization
 
-static/                       # Web UI (Vanilla JS single-page app)
+static/                       # Web UI (Vue 3 single-page app)
 ├── index.html               # Main HTML shell
-├── css/style.css            # Dashboard styling
-├── js/app.js                # Router and app initialization
-├── js/dashboard.js          # Dashboard page
-├── js/browser.js            # Memories page (search, filter, browse)
-├── js/identity.js           # Identity page (current and history)
-├── js/reflections.js        # Reflections page
-├── js/sessions.js           # Sessions page
-├── js/graph.js              # Memory graph visualization
-├── js/threads.js            # Threads page
-└── js/analytics.js          # Analytics page
+├── css/                     # Stylesheets (variables, base, layout, components, pages, dashboard-v2)
+├── js/app.js                # Vue 3 bootstrap, router, API client, shared utilities
+└── js/pages/                # Vue components (Dashboard, Memories, Identity, Reflections,
+                             #   Sessions, Graph, Threads, Analytics, Health, Growth,
+                             #   BlindSpots, SelfModel, Beliefs, Setup, Login)
 
 data/                         # SQLite database + ChromaDB vectors (gitignored)
 ├── megregore.db             # SQLite database
@@ -168,46 +198,70 @@ requirements.txt             # Pinned dependencies
 
 ## MCP Tools Reference
 
-All 14 tools are documented with full docstrings in `megregore/mcp_server.py`. Here's a quick overview:
+All 35 tools are documented with full docstrings in `megregore/mcp_server.py`. Key categories:
 
 ### Memory Management
-- **`remember(content, memory_type, importance, emotional_weight, tags, context)`** — Store a new memory. importance (1-10), emotional_weight (-1.0 to 1.0), memory_type (experience, fact, observation, reflection, insight, emotion).
-- **`recall_memories(query, limit, memory_type, min_importance, tags, search_mode)`** — Search memories by keyword or semantic similarity. search_mode: "hybrid" (default), "semantic", or "keyword".
-- **`forget(memory_id, fade_amount)`** — Fade a memory's importance over time (exponential decay). fade_amount 0.0-1.0.
+- **`remember`** — Store a new memory with type, importance (1-10), emotional weight (-1.0 to 1.0), and tags
+- **`recall_memories`** — Hybrid search with conversation-aware context blending
+- **`edit_memory`** — Partial update (content, importance, tags, emotional_weight) with re-embedding
+- **`delete_memory`** — Hard delete from SQLite + ChromaDB + links + access log
+- **`forget`** — Fade a memory's importance (exponential decay)
 
-### Identity
-- **`get_identity()`** — Load the current identity document.
-- **`update_identity(content, reason)`** — Evolve identity with version history tracking.
+### Identity & Reflection
+- **`get_identity`** / **`update_identity`** — Identity document with version history
+- **`reflect`** — Form insights from multiple memories; optionally evolve identity
+- **`link`** / **`consolidate`** — Build memory graph and merge related memories
 
-### Insights & Organization
-- **`reflect(reflection, memory_ids, insight_type, identity_update, identity_update_reason)`** — Form insights from multiple memories; optionally update identity.
-- **`link(source_id, target_id, link_type, strength)`** — Create semantic links between memories (related, caused_by, evolved_from, contradicts).
-- **`consolidate(memory_ids, synthesis, importance, fade_amount)`** — Merge 2+ related memories into a synthesis; fade originals.
+### Session Lifecycle (V11)
+- **`temporal_context`** — Current time, last session gap, and previous session summary
+- **`snapshot_context`** — Minimal-friction context save for pre-compaction emergencies
+- **`session_summary`** — Structured end-of-session capture (topics, decisions, next steps, mood)
+- **`set_session_topic`** — Prime conversation-aware recall with topic keywords
 
 ### Discovery & Analytics
-- **`surface_relevant(context, limit)`** — Get memories most relevant to current context (proactive surfacing).
-- **`memory_stats()`** — Overview: total memories, type breakdown, strongest memories, average importance.
-- **`list_sessions_tool(limit)`** — List past conversation sessions with timestamps and memory counts.
-- **`session_context(session_id)`** — Load details about a session (mood, memories formed, timeline).
-- **`list_threads(limit)`** — List semantic memory threads with member counts.
-- **`explore_thread(thread_id)`** — Get all memories in a thread with threading metadata.
+- **`surface_relevant`** — Proactive memory surfacing based on current context
+- **`memory_stats`** / **`memory_health`** — Landscape overview and health checks
+- **`list_sessions_tool`** / **`session_context`** — Session history and details
+- **`list_threads`** / **`explore_thread`** — Semantic thread exploration
+- **`suggest_consolidations`** / **`suggest_links_tool`** — AI-suggested memory organization
+
+### Self-Awareness (V7-V9)
+- **`introspection_status`** — Self-directed vs world-directed attention ratio
+- **`scan_blind_spots`** — Neglected topics and avoided subjects
+- **`check_alignment`** — Stated values vs behavioral evidence
+- **`predict_self`** / **`check_predictions`** — Falsifiable self-model predictions
+- **`measure_growth`** — Integration depth and trajectory metrics
+
+### Philosophical Beliefs (V10)
+- **`record_belief`** / **`update_belief`** — Belief tracking with confidence and evolution history
+- **`add_belief_argument`** — Supporting, counter, and qualifying arguments
+- **`get_philosophical_context`** — Socratic question seeds from detected tensions
+- **`record_tension`** / **`explore_beliefs`** — Belief graph navigation
 
 ## Database Schema
 
-Megregore uses SQLite with FTS5 for full-text search and ChromaDB for semantic embeddings. The schema is versioned at v5.
+Megregore uses SQLite with FTS5 for full-text search and ChromaDB for semantic embeddings. The schema is versioned at **v10** with automatic migrations.
 
 **Tables:**
-- `memories` — Core memory storage (content, memory_type, importance, emotional_weight, tags, activation_level, thread_id, access_count, session_id, created_at, last_accessed)
+- `memories` — Core memory storage with activation decay, threading, and session tracking
 - `memories_fts` — Full-text search index on memory content and tags
-- `identity` — Versioned identity documents (content, version, updated_at, updated_reason)
-- `reflections` — Insight consolidations (content, memory_ids, insight_type, session_id, created_at)
-- `memory_links` — Graph edges between memories (source_memory_id, target_memory_id, link_type, strength)
-- `sessions` — Conversation session tracking (id, started_at, last_active, memory_count, summary)
-- `threads` — Semantic memory threads (title, description, created_at, last_active, memory_count)
-- `memory_access_log` — Usage analytics (memory_id, access_type, context_json, session_id, accessed_at)
+- `identity` — Versioned identity documents with evolution history
+- `reflections` — Insight consolidations linking multiple memories
+- `memory_links` — Graph edges (related, caused_by, evolved_from, contradicts)
+- `sessions` — Conversation session tracking with emotional arcs
+- `session_summaries` — Structured session summaries (topics, decisions, next steps, mood) (V11)
+- `threads` — Semantic memory threads (auto-grouping by topic)
+- `memory_access_log` — Usage analytics and access patterns
+- `beliefs` — Philosophical beliefs with domain, confidence, and status (V10)
+- `belief_arguments` — Supporting, counter, and qualifying arguments for beliefs (V10)
+- `belief_tensions` — Contradictions and dependencies between beliefs (V10)
+- `self_predictions` — Falsifiable self-model predictions with evaluation (V9)
+- `introspection_snapshots` — Self-directed attention ratio tracking (V7)
+- `blind_spot_snapshots` — Neglected topic detection results (V8)
+- `alignment_snapshots` — Value alignment check results (V8)
 - `schema_meta` — Key-value version tracking
 
-For details, see `megregore/database.py`.
+For details, see `megregore/database.py` and `megregore/migrations.py`.
 
 ## Configuration
 
@@ -233,7 +287,7 @@ Ensure the `cwd` points to your Megregore installation directory.
 - **Web Server** — FastAPI + Uvicorn
 - **Storage** — SQLite + FTS5 for full-text search
 - **Embeddings** — sentence-transformers (all-MiniLM-L6-v2) + ChromaDB for semantic search
-- **Web UI** — Vanilla JavaScript single-page app
+- **Web UI** — Vue 3 single-page app with glassmorphic Neural Void aesthetic
 - **Memory Engine** — Custom exponential decay, threading, and surfacing algorithms
 
 ## How It Works
@@ -285,7 +339,11 @@ Claude can view full identity history via the dashboard.
 
 ### Run Tests
 
-Currently, testing is done via manual verification in the web dashboard and MCP tool calls. Tests are planned for the roadmap.
+```bash
+python -m pytest -v
+```
+
+The test suite includes 228+ tests covering memory operations, migrations, context vectors, session capture, events, CRUD operations, beliefs, self-awareness metrics, and more.
 
 ### Add a New MCP Tool
 
