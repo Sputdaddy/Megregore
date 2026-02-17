@@ -181,6 +181,18 @@ async def store(
             metadata={"memory_type": memory_type, "importance": importance},
         )
 
+        # V11: Emit event
+        try:
+            from .events import emit
+            emit("memory_created", {
+                "id": memory_id,
+                "type": memory_type,
+                "importance": importance,
+                "preview": content[:100],
+            })
+        except Exception:
+            pass
+
         return {
             "id": memory_id,
             "content": content,
@@ -208,6 +220,7 @@ async def recall(
     min_importance: int = 1,
     tags_filter: Optional[list[str]] = None,
     search_mode: str = "hybrid",
+    session_id: Optional[str] = None,
 ) -> list[dict]:
     """
     Search and retrieve memories by relevance.
@@ -904,5 +917,112 @@ async def apply_activation_decay() -> dict:
 
         await db.commit()
         return {"total": len(rows), "updated": updated, "timestamp": now}
+    finally:
+        await db.close()
+
+
+async def update_memory(
+    memory_id: int,
+    content: Optional[str] = None,
+    importance: Optional[int] = None,
+    tags: Optional[list[str]] = None,
+    emotional_weight: Optional[float] = None,
+) -> Optional[dict]:
+    """
+    Partial update of a memory. Only changes provided fields.
+    Re-embeds in ChromaDB if content changes.
+    """
+    db = await database.get_connection()
+    try:
+        cursor = await db.execute("SELECT * FROM memories WHERE id = ?", (memory_id,))
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+
+        mem = dict(row)
+
+        updates = []
+        params = []
+
+        if content is not None:
+            updates.append("content = ?")
+            params.append(content)
+        if importance is not None:
+            updates.append("importance = ?")
+            params.append(importance)
+        if tags is not None:
+            updates.append("tags = ?")
+            params.append(json.dumps(tags))
+        if emotional_weight is not None:
+            updates.append("emotional_weight = ?")
+            params.append(emotional_weight)
+
+        if not updates:
+            mem["tags"] = json.loads(mem["tags"])
+            return mem
+
+        params.append(memory_id)
+        sql = f"UPDATE memories SET {', '.join(updates)} WHERE id = ?"
+        await db.execute(sql, params)
+        await db.commit()
+
+        if content is not None:
+            await embeddings.embed_and_store(
+                memory_id=memory_id,
+                content=content,
+                context=mem["context"],
+                metadata={
+                    "memory_type": mem["memory_type"],
+                    "importance": importance if importance is not None else mem["importance"],
+                },
+            )
+
+        cursor = await db.execute("SELECT * FROM memories WHERE id = ?", (memory_id,))
+        row = await cursor.fetchone()
+        result = dict(row)
+        result["tags"] = json.loads(result["tags"])
+        return result
+    finally:
+        await db.close()
+
+
+async def delete_memory(memory_id: int) -> dict:
+    """
+    Hard delete a memory from SQLite, ChromaDB, and FTS.
+    Removes associated links and access log entries.
+    """
+    db = await database.get_connection()
+    try:
+        cursor = await db.execute("SELECT id FROM memories WHERE id = ?", (memory_id,))
+        row = await cursor.fetchone()
+        if row is None:
+            return {"status": "not_found", "memory_id": memory_id}
+
+        await db.execute(
+            "DELETE FROM memory_links WHERE source_memory_id = ? OR target_memory_id = ?",
+            (memory_id, memory_id),
+        )
+
+        await db.execute(
+            "DELETE FROM memory_access_log WHERE memory_id = ?",
+            (memory_id,),
+        )
+
+        await db.execute("DELETE FROM memories WHERE id = ?", (memory_id,))
+        await db.commit()
+
+        try:
+            collection = await embeddings._ensure_collection()
+            if collection:
+                import asyncio
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(
+                    None,
+                    lambda: collection.delete(ids=[str(memory_id)]),
+                )
+        except Exception:
+            pass
+
+        return {"status": "deleted", "memory_id": memory_id}
     finally:
         await db.close()
