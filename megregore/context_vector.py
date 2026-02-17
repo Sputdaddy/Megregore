@@ -125,6 +125,58 @@ def cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
     return dot / (norm_a * norm_b)
 
 
+async def get_context_scores(
+    candidate_ids: list[int],
+    session_id: str,
+) -> dict[int, float]:
+    """
+    Compute session-context relevance scores for candidate memories.
+
+    Fetches embeddings from ChromaDB for the given memory IDs,
+    computes cosine similarity against the session context vector.
+
+    Returns {memory_id: similarity} dict. Missing IDs get no entry.
+    Returns empty dict if session vector or ChromaDB unavailable.
+    """
+    # Get session context vector (from cache or compute)
+    context_vec = _session_context_cache.get(session_id)
+    if context_vec is None:
+        context_vec = await compute_session_context_vector(session_id)
+    if context_vec is None:
+        return {}
+
+    if not candidate_ids:
+        return {}
+
+    try:
+        collection = await embeddings._ensure_collection()
+        if collection is None:
+            return {}
+
+        loop = asyncio.get_running_loop()
+        str_ids = [str(mid) for mid in candidate_ids]
+
+        result = await loop.run_in_executor(
+            None,
+            lambda: collection.get(ids=str_ids, include=["embeddings"]),
+        )
+
+        if not result or not result.get("ids") or not result.get("embeddings"):
+            return {}
+
+        scores = {}
+        for id_str, embedding in zip(result["ids"], result["embeddings"]):
+            if embedding is not None:
+                sim = cosine_similarity(embedding, context_vec)
+                # Clamp to [0, 1] — negative similarity means anti-correlated
+                scores[int(id_str)] = max(0.0, sim)
+
+        return scores
+    except Exception as e:
+        logger.warning("Context scoring failed: %s", e)
+        return {}
+
+
 async def set_session_topic(
     topics: list[str],
     session_id: str,

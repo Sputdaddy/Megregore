@@ -1,6 +1,7 @@
 """Memory engine for Megregore. Handles storage, retrieval, decay, and linking."""
 
 import json
+import logging
 import math
 import re
 from datetime import datetime, timedelta, timezone
@@ -9,6 +10,8 @@ from typing import Optional
 from . import database
 from . import embeddings
 from . import identity
+
+logger = logging.getLogger("megregore.memory")
 
 
 def _sanitize_fts(query: str) -> str:
@@ -302,17 +305,37 @@ async def recall(
                 candidate_memories[mem["id"]] = mem
 
         # --- Step 4: Score all candidates ---
+        # Get session context scores if session_id provided
+        context_scores: dict[int, float] = {}
+        if session_id and candidate_memories:
+            try:
+                from .context_vector import get_context_scores, blend_context_score
+                context_scores = await get_context_scores(
+                    list(candidate_memories.keys()), session_id
+                )
+            except Exception as e:
+                logger.debug("Context scoring unavailable: %s", e)
+
         memories = []
         for mid, mem in candidate_memories.items():
             fts_rank = mem.pop("fts_rank", None)
             sem_score = semantic_scores.get(mid)
 
-            mem["_relevance"] = compute_relevance(
+            base_relevance = compute_relevance(
                 mem,
                 fts_rank=fts_rank,
                 semantic_score=sem_score,
                 search_mode=effective_mode,
             )
+
+            # Blend with session context if available
+            ctx_score = context_scores.get(mid)
+            if ctx_score is not None:
+                mem["_relevance"] = blend_context_score(base_relevance, ctx_score)
+                mem["_context_boosted"] = True
+            else:
+                mem["_relevance"] = base_relevance
+
             memories.append(mem)
 
         # Filter by tags if specified
