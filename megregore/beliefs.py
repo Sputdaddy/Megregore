@@ -238,7 +238,7 @@ async def get_belief(belief_id: int) -> Optional[dict]:
     linked_memories = [dict(r) for r in await cursor.fetchall()]
 
     cursor = await db.execute(
-        "SELECT * FROM belief_evolution WHERE belief_id = ? ORDER BY created_at DESC",
+        "SELECT * FROM belief_evolution WHERE belief_id = ? ORDER BY id DESC",
         (belief_id,),
     )
     evolution = [dict(r) for r in await cursor.fetchall()]
@@ -442,7 +442,7 @@ async def get_belief_evolution(belief_id: int) -> list[dict]:
     """Get evolution history for a belief."""
     db = await database.get_connection()
     cursor = await db.execute(
-        "SELECT * FROM belief_evolution WHERE belief_id = ? ORDER BY created_at DESC",
+        "SELECT * FROM belief_evolution WHERE belief_id = ? ORDER BY id DESC",
         (belief_id,),
     )
     return [dict(r) for r in await cursor.fetchall()]

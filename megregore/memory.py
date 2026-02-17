@@ -1004,6 +1004,13 @@ async def update_memory(
         row = await cursor.fetchone()
         result = dict(row)
         result["tags"] = json.loads(result["tags"])
+
+        try:
+            from .events import emit
+            emit("memory_updated", {"id": memory_id})
+        except Exception:
+            pass
+
         return result
     finally:
         await db.close()
@@ -1043,6 +1050,12 @@ async def delete_memory(memory_id: int) -> dict:
                     None,
                     lambda: collection.delete(ids=[str(memory_id)]),
                 )
+        except Exception as e:
+            logger.warning("ChromaDB delete failed for memory %d: %s", memory_id, e)
+
+        try:
+            from .events import emit
+            emit("memory_deleted", {"id": memory_id})
         except Exception:
             pass
 

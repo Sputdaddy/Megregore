@@ -3,8 +3,6 @@ from megregore.consolidation_engine import (
     find_consolidation_candidates, _cluster_by_thread, _score_candidate_group
 )
 
-pytestmark = pytest.mark.asyncio
-
 
 class TestScoreCandidateGroup:
     def test_high_similarity_same_thread(self):
