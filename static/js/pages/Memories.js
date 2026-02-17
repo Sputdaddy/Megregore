@@ -18,6 +18,9 @@ megregoreApp.component('memories-page', {
         const linkedLoading = reactive({});
         const loading = ref(false);
         const error = ref('');
+        const editingId = ref(null);
+        const editForm = reactive({ content: '', importance: 5, tags: '', emotional_weight: 0 });
+        const deleteConfirmId = ref(null);
 
         // Search debounce
         let searchTimeout = null;
@@ -139,6 +142,47 @@ megregoreApp.component('memories-page', {
             return App.truncateText(memory.content, 200);
         }
 
+        function startEdit(memory) {
+            editingId.value = memory.id;
+            editForm.content = memory.content || '';
+            editForm.importance = memory.importance || 5;
+            editForm.tags = (memory.tags || []).join(', ');
+            editForm.emotional_weight = memory.emotional_weight || 0;
+        }
+
+        function cancelEdit() {
+            editingId.value = null;
+        }
+
+        async function saveEdit(memoryId) {
+            try {
+                const updates = {};
+                if (editForm.content) updates.content = editForm.content;
+                updates.importance = editForm.importance;
+                if (editForm.tags.trim()) {
+                    updates.tags = editForm.tags.split(',').map(t => t.trim()).filter(Boolean);
+                }
+                updates.emotional_weight = parseFloat(editForm.emotional_weight) || 0;
+                await App.apiPut(`/memories/${memoryId}`, updates);
+                editingId.value = null;
+                await loadMemories();
+            } catch (e) {
+                error.value = 'Failed to save: ' + (e.message || 'Unknown error');
+            }
+        }
+
+        async function deleteMemory(memoryId) {
+            if (!window.confirm('Are you sure you want to permanently delete this memory? This cannot be undone.')) {
+                return;
+            }
+            try {
+                await App.apiDelete(`/memories/${memoryId}`);
+                await loadMemories();
+            } catch (e) {
+                error.value = 'Failed to delete: ' + (e.message || 'Unknown error');
+            }
+        }
+
         // Lifecycle
         onMounted(() => {
             loadMemories();
@@ -169,6 +213,13 @@ megregoreApp.component('memories-page', {
             nextPage,
             shouldTruncate,
             getDisplayContent,
+            editingId,
+            editForm,
+            deleteConfirmId,
+            startEdit,
+            cancelEdit,
+            saveEdit,
+            deleteMemory,
         };
     },
 
@@ -287,6 +338,55 @@ megregoreApp.component('memories-page', {
                         </div>
                         <div v-if="memory.thread_id" class="card-meta-item">
                             <span class="thread-badge">Thread #{{ memory.thread_id }}</span>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div style="display: flex; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.04);">
+                        <button @click="startEdit(memory)"
+                                style="font-size: 0.75rem; padding: 4px 12px; border-radius: 4px; background: rgba(212,160,83,0.1); color: #d4a053; border: 1px solid rgba(212,160,83,0.2); cursor: pointer; transition: all 0.2s;"
+                                v-if="editingId !== memory.id">
+                            Edit
+                        </button>
+                        <button @click="deleteMemory(memory.id)"
+                                style="font-size: 0.75rem; padding: 4px 12px; border-radius: 4px; background: rgba(239,68,68,0.1); color: #ef4444; border: 1px solid rgba(239,68,68,0.2); cursor: pointer; transition: all 0.2s;">
+                            Delete
+                        </button>
+                    </div>
+
+                    <!-- Inline Edit Form -->
+                    <div v-if="editingId === memory.id" style="margin-top: 12px; padding: 16px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid rgba(255,255,255,0.06);">
+                        <div style="margin-bottom: 10px;">
+                            <label style="display: block; font-size: 0.7rem; color: var(--text-muted, #8a8690); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px;">Content</label>
+                            <textarea v-model="editForm.content"
+                                      style="width: 100%; min-height: 80px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; color: inherit; padding: 8px; font-family: inherit; font-size: 0.85rem; resize: vertical;"></textarea>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 12px;">
+                            <div>
+                                <label style="display: block; font-size: 0.7rem; color: var(--text-muted, #8a8690); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px;">Importance (1-10)</label>
+                                <input type="number" v-model.number="editForm.importance" min="1" max="10"
+                                       style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; color: inherit; padding: 6px 8px; font-size: 0.85rem;">
+                            </div>
+                            <div>
+                                <label style="display: block; font-size: 0.7rem; color: var(--text-muted, #8a8690); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px;">Tags (comma-sep)</label>
+                                <input type="text" v-model="editForm.tags"
+                                       style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; color: inherit; padding: 6px 8px; font-size: 0.85rem;">
+                            </div>
+                            <div>
+                                <label style="display: block; font-size: 0.7rem; color: var(--text-muted, #8a8690); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px;">Emotion (-1 to 1)</label>
+                                <input type="number" v-model.number="editForm.emotional_weight" min="-1" max="1" step="0.1"
+                                       style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; color: inherit; padding: 6px 8px; font-size: 0.85rem;">
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 8px;">
+                            <button @click="saveEdit(memory.id)"
+                                    style="font-size: 0.75rem; padding: 6px 16px; border-radius: 4px; background: rgba(79,209,197,0.15); color: #4fd1c5; border: 1px solid rgba(79,209,197,0.3); cursor: pointer;">
+                                Save
+                            </button>
+                            <button @click="cancelEdit()"
+                                    style="font-size: 0.75rem; padding: 6px 16px; border-radius: 4px; background: rgba(255,255,255,0.05); color: #8a8690; border: 1px solid rgba(255,255,255,0.08); cursor: pointer;">
+                                Cancel
+                            </button>
                         </div>
                     </div>
 

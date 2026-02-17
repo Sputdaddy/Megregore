@@ -239,6 +239,27 @@
     .mega-dash-stats { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
 }
 
+@media (max-width: 768px) {
+    .mega-dash-header h1 { font-size: 1.6rem; }
+    .mega-dash-header { padding: 8px 0 24px; }
+    .mega-dash-stats { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .mega-dash-stat { padding: 16px 14px; }
+    .mega-dash-stat-value { font-size: 1.5rem; }
+    .mega-dash-section { padding: 18px 14px; }
+    .mega-dash-chart { height: 200px; }
+    .mega-dash-chart canvas { max-height: 200px; }
+    .mega-dash-bar-row { grid-template-columns: 70px 1fr 32px; gap: 8px; }
+    .mega-dash-growth-row { flex-direction: column; text-align: center; }
+    .mega-dash-identity { max-height: 150px; }
+}
+
+@media (max-width: 480px) {
+    .mega-dash-stats { grid-template-columns: 1fr; }
+    .mega-dash-stat { padding: 14px 12px; }
+    .mega-dash-memory { padding: 12px; }
+    .mega-dash-memory-header { flex-wrap: wrap; }
+}
+
 /* --- Chart Container --- */
 .mega-dash-chart {
     height: 260px;

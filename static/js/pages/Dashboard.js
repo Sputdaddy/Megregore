@@ -15,6 +15,8 @@ megregoreApp.component('dashboard-page', {
         const emotionTimeline = ref([]);
         const growth = ref(null);
         const threads = ref([]);
+        const activityEvents = ref([]);
+        let eventSource = null;
         let chartInstance = null;
 
         const typeOrder = ['experience', 'fact', 'observation', 'reflection', 'insight', 'emotion'];
@@ -194,15 +196,59 @@ megregoreApp.component('dashboard-page', {
             await loadData();
             await nextTick();
             renderChart();
+
+            // SSE Activity Ticker
+            try {
+                eventSource = new EventSource('/api/events');
+
+                eventSource.addEventListener('memory_created', (e) => {
+                    const data = JSON.parse(e.data);
+                    activityEvents.value = [{
+                        type: 'created',
+                        text: `Memory #${data.id} created`,
+                        detail: `${data.type}, importance: ${data.importance}`,
+                        preview: data.preview || '',
+                        time: new Date().toLocaleTimeString(),
+                    }, ...activityEvents.value].slice(0, 20);
+                });
+
+                eventSource.addEventListener('memory_updated', (e) => {
+                    const data = JSON.parse(e.data);
+                    activityEvents.value = [{
+                        type: 'updated',
+                        text: `Memory #${data.id} updated`,
+                        detail: '',
+                        time: new Date().toLocaleTimeString(),
+                    }, ...activityEvents.value].slice(0, 20);
+                });
+
+                eventSource.addEventListener('memory_deleted', (e) => {
+                    const data = JSON.parse(e.data);
+                    activityEvents.value = [{
+                        type: 'deleted',
+                        text: `Memory #${data.id} deleted`,
+                        detail: '',
+                        time: new Date().toLocaleTimeString(),
+                    }, ...activityEvents.value].slice(0, 20);
+                });
+
+                eventSource.onerror = () => {
+                    // Silently handle SSE reconnection
+                };
+            } catch (e) {
+                // SSE not available, ticker just stays empty
+            }
         });
 
         onUnmounted(() => {
             if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+            if (eventSource) { eventSource.close(); eventSource = null; }
         });
 
         return {
             loading, error, statCards, recentMemories, strongestMemories,
             typeRows, identityPreview, emotionTimeline, growth, integrationScore,
+            activityEvents,
         };
     },
 
@@ -233,8 +279,31 @@ megregoreApp.component('dashboard-page', {
                 </div>
             </div>
 
+            <!-- Activity Ticker -->
+            <div v-if="activityEvents.length" class="mega-dash-section mega-dash-fade-in mega-dash-delay-7" style="margin-bottom: 24px;">
+                <div class="mega-dash-section-title">
+                    <span class="nd-dot" style="background: var(--nd-teal); box-shadow: 0 0 8px var(--nd-teal-glow);"></span>
+                    Live Activity
+                </div>
+                <div style="max-height: 200px; overflow-y: auto;">
+                    <div v-for="(evt, i) in activityEvents" :key="i"
+                         style="display: flex; align-items: baseline; gap: 10px; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.03);"
+                         :style="{ opacity: 1 - (i * 0.03) }">
+                        <span style="font-size: 0.65rem; color: var(--nd-text-muted); white-space: nowrap; font-family: 'DM Sans', monospace;">{{ evt.time }}</span>
+                        <span :style="{
+                            fontSize: '0.6rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em',
+                            padding: '2px 6px', borderRadius: '3px',
+                            background: evt.type === 'created' ? 'rgba(79,209,197,0.15)' : evt.type === 'updated' ? 'rgba(212,160,83,0.15)' : 'rgba(244,114,182,0.15)',
+                            color: evt.type === 'created' ? 'var(--nd-teal)' : evt.type === 'updated' ? 'var(--nd-amber)' : 'var(--nd-rose)',
+                        }">{{ evt.type }}</span>
+                        <span style="font-size: 0.8rem; color: var(--nd-text);">{{ evt.text }}</span>
+                        <span v-if="evt.detail" style="font-size: 0.7rem; color: var(--nd-text-dim);">{{ evt.detail }}</span>
+                    </div>
+                </div>
+            </div>
+
             <!-- Emotional Arc Chart -->
-            <div class="mega-dash-section mega-dash-fade-in mega-dash-delay-7">
+            <div class="mega-dash-section mega-dash-fade-in mega-dash-delay-8">
                 <div class="mega-dash-section-title">
                     <span class="nd-dot"></span>
                     Emotional Arc
@@ -248,7 +317,7 @@ megregoreApp.component('dashboard-page', {
             <!-- Two Column: Memories -->
             <div class="mega-dash-grid">
                 <!-- Recent Memories -->
-                <div class="mega-dash-section mega-dash-fade-in mega-dash-delay-8">
+                <div class="mega-dash-section mega-dash-fade-in mega-dash-delay-9">
                     <div class="mega-dash-section-title">
                         <span class="nd-dot"></span>
                         Recent Memories
@@ -274,7 +343,7 @@ megregoreApp.component('dashboard-page', {
                 </div>
 
                 <!-- Strongest Memories -->
-                <div class="mega-dash-section mega-dash-fade-in mega-dash-delay-8">
+                <div class="mega-dash-section mega-dash-fade-in mega-dash-delay-9">
                     <div class="mega-dash-section-title">
                         <span class="nd-dot"></span>
                         Strongest Memories
@@ -303,7 +372,7 @@ megregoreApp.component('dashboard-page', {
             <!-- Bottom Row: Types + Growth + Identity -->
             <div class="mega-dash-grid" style="grid-template-columns: 1fr 1fr;">
                 <!-- Memory Types -->
-                <div class="mega-dash-section mega-dash-fade-in mega-dash-delay-9">
+                <div class="mega-dash-section mega-dash-fade-in mega-dash-delay-10">
                     <div class="mega-dash-section-title">
                         <span class="nd-dot"></span>
                         Memory Composition
@@ -339,7 +408,7 @@ megregoreApp.component('dashboard-page', {
                 </div>
 
                 <!-- Identity Snapshot -->
-                <div class="mega-dash-section mega-dash-fade-in mega-dash-delay-9">
+                <div class="mega-dash-section mega-dash-fade-in mega-dash-delay-10">
                     <div class="mega-dash-section-title">
                         <span class="nd-dot"></span>
                         Identity Snapshot

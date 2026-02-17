@@ -208,6 +208,7 @@ async def recall_memories(
         tags: Filter to memories with any of these tags.
         search_mode: How to search. "hybrid" (default) blends keyword + semantic similarity. "semantic" for pure meaning-based search. "keyword" for exact text matching only.
     """
+    session_id = await _ensure_session()
     memories = await recall(
         query=query,
         limit=limit,
@@ -215,6 +216,7 @@ async def recall_memories(
         min_importance=min_importance,
         tags_filter=tags,
         search_mode=search_mode,
+        session_id=session_id,
     )
 
     if not memories:
@@ -882,6 +884,156 @@ async def temporal_context() -> str:
         result["last_session"] = None
         result["time_since_last_session"] = "This is our first conversation"
 
+    # V11: Include last session summary for narrative continuity
+    try:
+        from .session_capture import get_last_summary
+        last_summary = await get_last_summary(exclude_session=_session_id)
+        if last_summary:
+            result["last_summary"] = {
+                "topics": json.loads(last_summary["topics"]),
+                "decisions": json.loads(last_summary["decisions"]),
+                "next_steps": json.loads(last_summary["next_steps"]),
+                "mood": last_summary["mood"],
+                "files_changed": json.loads(last_summary["files_changed"]),
+            }
+        else:
+            result["last_summary"] = None
+    except Exception:
+        result["last_summary"] = None
+
+    return json.dumps(result)
+
+
+# --- V11: Session Lifecycle Tools ---
+
+@mcp.tool()
+async def snapshot_context(
+    content: str,
+    tags: Optional[list[str]] = None,
+) -> str:
+    """
+    Minimal-friction context save for pre-compaction emergencies.
+
+    Auto-sets importance=7, type=experience. Designed to be called fast
+    when context is about to be lost.
+
+    Args:
+        content: What's happening right now — current work, decisions, progress.
+        tags: Optional extra tags (["context-snapshot"] is always included).
+    """
+    from .session_capture import snapshot_context as _snapshot
+    session_id = await _ensure_session()
+    result = await _snapshot(content=content, tags=tags, session_id=session_id)
+    return json.dumps(result)
+
+
+@mcp.tool()
+async def session_summary(
+    topics: list[str],
+    decisions: Optional[list[str]] = None,
+    next_steps: Optional[list[str]] = None,
+    mood: str = "productive",
+    files_changed: Optional[list[str]] = None,
+) -> str:
+    """
+    Structured end-of-session capture. Call at end of meaningful conversations.
+
+    Creates a session record AND a memory so it participates in recall.
+    Replaces the informal "save a memory about what we did" pattern.
+
+    Args:
+        topics: What was discussed (e.g., ["pathfinding bugs", "TCP fixes"]).
+        decisions: Decisions made during the session.
+        next_steps: Pending items for next session.
+        mood: Session mood — productive, contemplative, frustrated, playful, deep, mixed.
+        files_changed: Files modified during coding sessions.
+    """
+    from .session_capture import create_session_summary
+    session_id = await _ensure_session()
+    result = await create_session_summary(
+        topics=topics, decisions=decisions, next_steps=next_steps,
+        mood=mood, files_changed=files_changed, session_id=session_id,
+    )
+    return json.dumps(result)
+
+
+@mcp.tool()
+async def set_session_topic(topics: list[str]) -> str:
+    """
+    Optional explicit context priming for cold-start sessions.
+
+    Seeds the session context vector before any memories have been accessed.
+    Useful at session start to prime recall relevance immediately.
+    Lightweight — just guides the recall boosting, doesn't create memories.
+
+    Args:
+        topics: Topic keywords to prime (e.g., ["consciousness", "philosophy"]).
+    """
+    from .context_vector import set_session_topic as _set_topic
+    session_id = await _ensure_session()
+    result = await _set_topic(topics=topics, session_id=session_id)
+    return json.dumps(result)
+
+
+# --- V11: Memory CRUD Tools ---
+
+@mcp.tool()
+async def edit_memory(
+    memory_id: int,
+    content: Optional[str] = None,
+    importance: Optional[int] = None,
+    tags: Optional[list[str]] = None,
+    emotional_weight: Optional[float] = None,
+) -> str:
+    """
+    Update a memory's content, importance, tags, or emotional weight.
+
+    Only provided fields are changed. If content changes, the ChromaDB
+    embedding is automatically updated.
+
+    Args:
+        memory_id: The memory to update.
+        content: New content text (triggers re-embedding).
+        importance: New importance (1-10).
+        tags: New tag list (replaces existing tags).
+        emotional_weight: New emotional weight (-1.0 to 1.0).
+    """
+    from .memory import update_memory
+    result = await update_memory(
+        memory_id=memory_id, content=content,
+        importance=importance, tags=tags,
+        emotional_weight=emotional_weight,
+    )
+    if result is None:
+        return json.dumps({"status": "error", "message": f"Memory {memory_id} not found."})
+
+    return json.dumps({
+        "status": "updated",
+        "memory_id": memory_id,
+        "changes": {
+            k: v for k, v in [
+                ("content", content is not None),
+                ("importance", importance is not None),
+                ("tags", tags is not None),
+                ("emotional_weight", emotional_weight is not None),
+            ] if v
+        },
+    })
+
+
+@mcp.tool()
+async def delete_memory_tool(memory_id: int) -> str:
+    """
+    Permanently remove a memory from the system.
+
+    Hard deletes from SQLite, ChromaDB, and FTS. Removes associated
+    links and access log entries. This cannot be undone.
+
+    Args:
+        memory_id: The memory to delete.
+    """
+    from .memory import delete_memory
+    result = await delete_memory(memory_id)
     return json.dumps(result)
 
 

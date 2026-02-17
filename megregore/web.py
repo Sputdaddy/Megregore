@@ -262,6 +262,43 @@ async def api_memory(memory_id: int):
     return {"memory": memory, "linked": linked}
 
 
+@app.put("/api/memories/{memory_id}", dependencies=[Depends(require_auth)])
+async def api_update_memory(memory_id: int, request: Request):
+    """Partial update of a memory."""
+    from .memory import update_memory
+    body = await request.json()
+
+    allowed_fields = {"content", "importance", "tags", "emotional_weight"}
+    unknown = set(body.keys()) - allowed_fields
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"Unknown fields: {unknown}")
+
+    if "importance" in body:
+        imp = body["importance"]
+        if not isinstance(imp, int) or imp < 1 or imp > 10:
+            raise HTTPException(status_code=400, detail="importance must be 1-10")
+
+    if "emotional_weight" in body:
+        ew = body["emotional_weight"]
+        if not isinstance(ew, (int, float)) or ew < -1.0 or ew > 1.0:
+            raise HTTPException(status_code=400, detail="emotional_weight must be -1.0 to 1.0")
+
+    result = await update_memory(memory_id, **body)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    return result
+
+
+@app.delete("/api/memories/{memory_id}", dependencies=[Depends(require_auth)])
+async def api_delete_memory(memory_id: int):
+    """Permanently delete a memory."""
+    from .memory import delete_memory
+    result = await delete_memory(memory_id)
+    if result["status"] == "not_found":
+        raise HTTPException(status_code=404, detail="Memory not found")
+    return result
+
+
 @app.get("/api/identity", dependencies=[Depends(require_auth)])
 async def api_identity():
     """Get the current identity document."""
@@ -597,6 +634,70 @@ async def api_belief_arguments(belief_id: int):
     """Arguments for a belief."""
     args = await get_belief_arguments(belief_id)
     return {"arguments": args, "count": len(args)}
+
+
+# --- V11: SSE Events ---
+
+@app.get("/api/events", dependencies=[Depends(require_auth)])
+async def api_events():
+    """SSE event stream for real-time dashboard updates."""
+    import asyncio
+    from .events import event_bus, format_sse
+    from starlette.responses import StreamingResponse
+
+    queue = event_bus.subscribe()
+
+    async def event_generator():
+        try:
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    yield format_sse(event["event"], event["data"])
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            event_bus.unsubscribe(queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# --- V11: Session Summaries API ---
+
+@app.get("/api/session-summaries", dependencies=[Depends(require_auth)])
+async def api_session_summaries(
+    limit: int = Query(20, ge=1, le=100),
+):
+    """List session summaries."""
+    from .session_capture import get_last_summary
+    from . import database
+    db = await database.get_connection()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM session_summaries ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        )
+        rows = await cursor.fetchall()
+        summaries = []
+        for row in rows:
+            s = dict(row)
+            s["topics"] = json.loads(s["topics"])
+            s["decisions"] = json.loads(s["decisions"])
+            s["next_steps"] = json.loads(s["next_steps"])
+            s["files_changed"] = json.loads(s["files_changed"])
+            summaries.append(s)
+        return {"summaries": summaries, "count": len(summaries)}
+    finally:
+        await db.close()
 
 
 # --- Static Files (Web UI) ---

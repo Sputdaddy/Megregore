@@ -518,3 +518,20 @@
 .orphan-list .card + .card {
     margin-top: 8px;
 }
+
+
+/* ============================================================
+   Mobile Responsive — Memory & Page Overrides (V11)
+   ============================================================ */
+@media (max-width: 768px) {
+    .memory-card .card-header { flex-wrap: wrap; gap: 8px; }
+    .memory-card .card-meta { font-size: 0.7rem; gap: 4px; }
+    .memory-card .card-content { font-size: 0.82rem; }
+    .identity-doc { padding: 18px; font-size: 0.85rem; }
+    .identity-header { flex-direction: column; align-items: flex-start; }
+}
+
+@media (max-width: 480px) {
+    .card { padding: 14px; }
+    .card-header { flex-direction: column; align-items: flex-start; }
+}
