@@ -577,3 +577,71 @@ async def migrate_v8_to_v9(db: aiosqlite.Connection) -> dict:
         "from_version": current_version,
         "to_version": 9,
     }
+
+
+async def migrate_v9_to_v10(db: aiosqlite.Connection) -> dict:
+    """
+    Migrate Megregore database from schema v9 to v10.
+
+    Adds session_summaries table for structured session lifecycle data.
+
+    Idempotent — safe to call multiple times.
+    """
+    cursor = await db.execute(
+        "SELECT value FROM schema_meta WHERE key = ?", ("schema_version",)
+    )
+    row = await cursor.fetchone()
+    current_version = int(row[0]) if row else 9
+
+    if current_version >= 10:
+        logger.info("Database already at v10 or newer. Skipping migration.")
+        return {
+            "status": "already_migrated",
+            "from_version": current_version,
+            "to_version": current_version,
+        }
+
+    logger.info(f"Migrating database from v{current_version} to v10")
+
+    # Create session_summaries table
+    try:
+        await db.execute("""
+            CREATE TABLE session_summaries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                topics TEXT DEFAULT '[]',
+                decisions TEXT DEFAULT '[]',
+                next_steps TEXT DEFAULT '[]',
+                mood TEXT DEFAULT 'productive',
+                files_changed TEXT DEFAULT '[]',
+                created_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (session_id) REFERENCES sessions(id)
+            )
+        """)
+        logger.debug("Created session_summaries table")
+    except aiosqlite.OperationalError as e:
+        if "already exists" in str(e):
+            logger.debug("session_summaries table already exists, skipping")
+        else:
+            raise
+
+    # Index
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_session_summaries_session ON session_summaries(session_id)"
+    )
+
+    # Update schema version
+    await db.execute(
+        "INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)",
+        ("schema_version", "10"),
+    )
+    logger.debug("Updated schema_meta to version 10")
+
+    await db.commit()
+    logger.info("Migration v9 -> v10 complete")
+
+    return {
+        "status": "migrated",
+        "from_version": current_version,
+        "to_version": 10,
+    }
