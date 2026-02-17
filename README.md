@@ -95,13 +95,14 @@ Start the MCP server that Claude Code and Claude Desktop can communicate with:
 python -m megregore
 ```
 
-This runs the server in stdio mode (used by Claude Code and Claude Desktop). The server exposes 35 tools that Claude can call to form, retrieve, and manage memories.
+This runs the server in stdio mode (used by Claude Code and Claude Desktop). The server exposes 36 tools that Claude can call to form, retrieve, and manage memories.
 
 **Example tools available to Claude:**
 - `remember()` — Store a new memory with importance, emotional weight, and tags
 - `recall_memories()` — Search memories with conversation-aware context blending
 - `reflect()` — Form insights from multiple memories
 - `get_identity()` / `update_identity()` — Identity document with version history
+- `session_start()` — Unified session initialization (identity + time + recent/important memories)
 - `surface_relevant()` — Proactively surface memories relevant to current context
 - `link()` / `consolidate()` — Build memory graph and merge related memories
 - `forget()` — Fade a memory over time (exponential decay)
@@ -156,7 +157,7 @@ This regenerates ChromaDB embeddings for all memories, enabling semantic search.
 ```
 megregore/                    # Python package (MCP server, database, memory engine, web API)
 ├── __main__.py              # Entry point; routes to MCP, web, or backfill
-├── mcp_server.py            # FastMCP server; exposes 35 tools for Claude
+├── mcp_server.py            # FastMCP server; exposes 36 tools for Claude
 ├── database.py              # SQLite schema and query layer (v10)
 ├── memory.py                # Memory engine: store, recall, update, delete, link, consolidate
 ├── decay.py                 # Exponential activation decay calculations
@@ -169,6 +170,7 @@ megregore/                    # Python package (MCP server, database, memory eng
 ├── context_vector.py        # Session context vector for conversation-aware recall (V11)
 ├── session_capture.py       # Session lifecycle: snapshots and structured summaries (V11)
 ├── events.py                # SSE event bus for real-time dashboard updates (V11)
+├── session_startup.py       # Unified session_start combining identity, time, and memories
 ├── beliefs.py               # Philosophical belief graph and Socratic dialogue (V10)
 ├── self_awareness.py        # Introspection, blind spots, alignment, self-model (V7-V9)
 ├── web.py                   # FastAPI web server and dashboard API
@@ -198,11 +200,11 @@ requirements.txt             # Pinned dependencies
 
 ## MCP Tools Reference
 
-All 35 tools are documented with full docstrings in `megregore/mcp_server.py`. Key categories:
+All 36 tools are documented with full docstrings in `megregore/mcp_server.py`. Key categories:
 
 ### Memory Management
 - **`remember`** — Store a new memory with type, importance (1-10), emotional weight (-1.0 to 1.0), and tags
-- **`recall_memories`** — Hybrid search with conversation-aware context blending
+- **`recall_memories`** — Hybrid search with conversation-aware context blending, configurable `content_length` (full/summary/brief), and optional `expand_graph` for linked neighbor discovery
 - **`edit_memory`** — Partial update (content, importance, tags, emotional_weight) with re-embedding
 - **`delete_memory`** — Hard delete from SQLite + ChromaDB + links + access log
 - **`forget`** — Fade a memory's importance (exponential decay)
@@ -213,6 +215,7 @@ All 35 tools are documented with full docstrings in `megregore/mcp_server.py`. K
 - **`link`** / **`consolidate`** — Build memory graph and merge related memories
 
 ### Session Lifecycle (V11)
+- **`session_start`** — Unified session initialization: loads identity, temporal context, recent + important memories, and last session summary in one call
 - **`temporal_context`** — Current time, last session gap, and previous session summary
 - **`snapshot_context`** — Minimal-friction context save for pre-compaction emergencies
 - **`session_summary`** — Structured end-of-session capture (topics, decisions, next steps, mood)
@@ -343,7 +346,7 @@ Claude can view full identity history via the dashboard.
 python -m pytest -v
 ```
 
-The test suite includes 228+ tests covering memory operations, migrations, context vectors, session capture, events, CRUD operations, beliefs, self-awareness metrics, and more.
+The test suite includes 239 tests covering memory operations, migrations, context vectors, session capture, events, CRUD operations, beliefs, self-awareness metrics, and more.
 
 ### Add a New MCP Tool
 
