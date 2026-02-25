@@ -216,6 +216,7 @@ async def api_memories(
     memory_type: Optional[str] = Query(None),
     sort_by: str = Query("created_at"),
     sort_order: str = Query("desc"),
+    permanent: Optional[bool] = Query(None),
 ):
     """List memories with pagination and filtering."""
     if memory_type and memory_type not in VALID_MEMORY_TYPES:
@@ -228,6 +229,7 @@ async def api_memories(
         limit=limit, offset=offset,
         memory_type=memory_type,
         sort_by=sort_by, sort_order=sort_order,
+        is_permanent=permanent,
     )
     return {"memories": memories, "total": total, "limit": limit, "offset": offset}
 
@@ -268,7 +270,7 @@ async def api_update_memory(memory_id: int, request: Request):
     from .memory import update_memory
     body = await request.json()
 
-    allowed_fields = {"content", "importance", "tags", "emotional_weight"}
+    allowed_fields = {"content", "importance", "tags", "emotional_weight", "is_permanent"}
     unknown = set(body.keys()) - allowed_fields
     if unknown:
         raise HTTPException(status_code=400, detail=f"Unknown fields: {unknown}")
@@ -282,6 +284,10 @@ async def api_update_memory(memory_id: int, request: Request):
         ew = body["emotional_weight"]
         if not isinstance(ew, (int, float)) or ew < -1.0 or ew > 1.0:
             raise HTTPException(status_code=400, detail="emotional_weight must be -1.0 to 1.0")
+
+    if "is_permanent" in body:
+        if not isinstance(body["is_permanent"], bool):
+            raise HTTPException(status_code=400, detail="is_permanent must be a boolean")
 
     result = await update_memory(memory_id, **body)
     if result is None:
@@ -297,6 +303,48 @@ async def api_delete_memory(memory_id: int):
     if result["status"] == "not_found":
         raise HTTPException(status_code=404, detail="Memory not found")
     return result
+
+
+@app.post("/api/memories/{memory_id}/pin", dependencies=[Depends(require_auth)])
+async def api_pin_memory(memory_id: int):
+    """Pin a memory — makes it permanent (always loaded, decay-proof)."""
+    from .memory import get as get_memory, update_memory
+    from . import database as db_mod
+
+    # Check count limit
+    db = await db_mod.get_connection()
+    try:
+        cursor = await db.execute("SELECT COUNT(*) FROM memories WHERE is_permanent = 1")
+        count = (await cursor.fetchone())[0]
+    finally:
+        await db.close()
+
+    if count >= 20:
+        raise HTTPException(status_code=409, detail=f"Maximum 20 permanent memories ({count} pinned). Unpin one first.")
+
+    memory = await get_memory(memory_id)
+    if memory is None:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    if memory.get("is_permanent"):
+        return {"status": "already_pinned", "memory_id": memory_id}
+
+    await update_memory(memory_id, is_permanent=True)
+    return {"status": "pinned", "memory_id": memory_id}
+
+
+@app.post("/api/memories/{memory_id}/unpin", dependencies=[Depends(require_auth)])
+async def api_unpin_memory(memory_id: int):
+    """Unpin a memory — returns to normal decay behavior."""
+    from .memory import get as get_memory, update_memory
+
+    memory = await get_memory(memory_id)
+    if memory is None:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    if not memory.get("is_permanent"):
+        return {"status": "not_pinned", "memory_id": memory_id}
+
+    await update_memory(memory_id, is_permanent=False)
+    return {"status": "unpinned", "memory_id": memory_id}
 
 
 @app.get("/api/identity", dependencies=[Depends(require_auth)])

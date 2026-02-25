@@ -146,6 +146,7 @@ async def remember(
     tags: Optional[list[str]] = None,
     context: Optional[str] = None,
     thread_id: Optional[int] = None,
+    is_permanent: bool = False,
 ) -> str:
     """
     Store a new memory.
@@ -158,6 +159,7 @@ async def remember(
         tags: Categorization labels (e.g., ["consciousness", "hunter"]).
         context: What prompted this memory?
         thread_id: Thread ID to assign to. Auto-detected if omitted.
+        is_permanent: If true, memory is always loaded at session start and exempt from decay.
     """
     session_id = await _ensure_session()
     memory = await store(
@@ -170,6 +172,7 @@ async def remember(
         context=context,
         session_id=session_id,
         thread_id=thread_id,
+        is_permanent=is_permanent,
     )
 
     # V8: Classify self-referential and update introspection budget
@@ -384,6 +387,10 @@ async def forget(
     memory = await fade(memory_id, fade_amount)
     if memory is None:
         return json.dumps({"status": "error", "message": f"Memory {memory_id} not found."})
+
+    # Check if fade was blocked by permanent flag
+    if memory.get("_error"):
+        return json.dumps({"status": "error", "message": memory["_error"]})
 
     return json.dumps({
         "status": "faded",
@@ -928,6 +935,7 @@ async def edit_memory(
     importance: Optional[int] = None,
     tags: Optional[list[str]] = None,
     emotional_weight: Optional[float] = None,
+    is_permanent: Optional[bool] = None,
 ) -> str:
     """
     Partial update of a memory. Only provided fields change. Content change triggers re-embedding.
@@ -938,12 +946,14 @@ async def edit_memory(
         importance: New importance (1-10).
         tags: New tag list (replaces existing).
         emotional_weight: New emotional weight (-1.0 to 1.0).
+        is_permanent: Set to true to pin (always loaded, decay-proof), false to unpin.
     """
     from .memory import update_memory
     result = await update_memory(
         memory_id=memory_id, content=content,
         importance=importance, tags=tags,
         emotional_weight=emotional_weight,
+        is_permanent=is_permanent,
     )
     if result is None:
         return json.dumps({"status": "error", "message": f"Memory {memory_id} not found."})
@@ -957,8 +967,73 @@ async def edit_memory(
                 ("importance", importance is not None),
                 ("tags", tags is not None),
                 ("emotional_weight", emotional_weight is not None),
+                ("is_permanent", is_permanent is not None),
             ] if v
         },
+    })
+
+
+@mcp.tool()
+async def pin_memory(memory_id: int) -> str:
+    """
+    Pin a memory — makes it permanent (always loaded at session start, exempt from decay).
+
+    Args:
+        memory_id: The memory to pin.
+    """
+    from .memory import update_memory, get
+
+    # Check permanent count limit
+    db = await database.get_connection()
+    try:
+        cursor = await db.execute("SELECT COUNT(*) FROM memories WHERE is_permanent = 1")
+        count = (await cursor.fetchone())[0]
+    finally:
+        await db.close()
+
+    if count >= 20:
+        return json.dumps({
+            "status": "error",
+            "message": f"Maximum 20 permanent memories allowed ({count} currently pinned). Unpin one first.",
+        })
+
+    memory = await get(memory_id)
+    if memory is None:
+        return json.dumps({"status": "error", "message": f"Memory {memory_id} not found."})
+
+    if memory.get("is_permanent"):
+        return json.dumps({"status": "already_pinned", "memory_id": memory_id})
+
+    await update_memory(memory_id, is_permanent=True)
+    return json.dumps({
+        "status": "pinned",
+        "memory_id": memory_id,
+        "message": f"Memory {memory_id} is now permanent. It will always load at session start and never decay.",
+    })
+
+
+@mcp.tool()
+async def unpin_memory(memory_id: int) -> str:
+    """
+    Unpin a memory — removes permanent status (returns to normal decay behavior).
+
+    Args:
+        memory_id: The memory to unpin.
+    """
+    from .memory import update_memory, get
+
+    memory = await get(memory_id)
+    if memory is None:
+        return json.dumps({"status": "error", "message": f"Memory {memory_id} not found."})
+
+    if not memory.get("is_permanent"):
+        return json.dumps({"status": "not_pinned", "memory_id": memory_id})
+
+    await update_memory(memory_id, is_permanent=False)
+    return json.dumps({
+        "status": "unpinned",
+        "memory_id": memory_id,
+        "message": f"Memory {memory_id} is no longer permanent. It will now decay normally.",
     })
 
 

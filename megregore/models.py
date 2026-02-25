@@ -61,6 +61,7 @@ class UpdateMemoryRequest(BaseModel):
     emotional_weight: Optional[float] = Field(default=None, ge=-1.0, le=1.0)
     tags: Optional[list[str]] = None
     context: Optional[str] = Field(default=None, max_length=5000)
+    is_permanent: Optional[bool] = None
 
 
 class FadeRequest(BaseModel):

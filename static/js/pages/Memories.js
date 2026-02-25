@@ -49,13 +49,18 @@ megregoreApp.component('memories-page', {
                     memories.value = data.memories || [];
                     total.value = data.count || memories.value.length;
                 } else {
-                    data = await App.api('/memories', {
+                    const params = {
                         limit: limit.value,
                         offset: offset.value,
-                        memory_type: memoryType.value || null,
                         sort_by: sortBy.value,
                         sort_order: sortOrder.value,
-                    });
+                    };
+                    if (memoryType.value === 'permanent') {
+                        params.permanent = true;
+                    } else if (memoryType.value) {
+                        params.memory_type = memoryType.value;
+                    }
+                    data = await App.api('/memories', params);
                     memories.value = data.memories || [];
                     total.value = data.total || 0;
                 }
@@ -171,6 +176,18 @@ megregoreApp.component('memories-page', {
             }
         }
 
+        async function togglePin(memory) {
+            try {
+                const endpoint = memory.is_permanent
+                    ? `/memories/${memory.id}/unpin`
+                    : `/memories/${memory.id}/pin`;
+                await App.apiPost(endpoint);
+                await loadMemories();
+            } catch (e) {
+                error.value = 'Failed to toggle pin: ' + (e.message || 'Unknown error');
+            }
+        }
+
         async function deleteMemory(memoryId) {
             if (!window.confirm('Are you sure you want to permanently delete this memory? This cannot be undone.')) {
                 return;
@@ -220,6 +237,7 @@ megregoreApp.component('memories-page', {
             cancelEdit,
             saveEdit,
             deleteMemory,
+            togglePin,
         };
     },
 
@@ -258,6 +276,7 @@ megregoreApp.component('memories-page', {
                     <label class="filter-label">Type</label>
                     <select class="filter-select" v-model="memoryType" @change="onFilterChange">
                         <option value="">All Types</option>
+                        <option value="permanent">Pinned Only</option>
                         <option value="experience">Experience</option>
                         <option value="fact">Fact</option>
                         <option value="observation">Observation</option>
@@ -301,6 +320,7 @@ megregoreApp.component('memories-page', {
                     <div class="card-header">
                         <div>
                             <span v-html="typeBadgeHtml(memory.memory_type)"></span>
+                            <span v-if="memory.is_permanent" style="display: inline-block; font-size: 0.65rem; padding: 2px 8px; border-radius: 10px; background: rgba(251,191,36,0.15); color: #fbbf24; border: 1px solid rgba(251,191,36,0.25); margin-left: 6px; font-weight: 600; letter-spacing: 0.04em;">PINNED</span>
                             <span v-html="emotionalIndicatorHtml(memory.emotional_weight)"></span>
                         </div>
                         <div v-html="importanceDotsHtml(memory.importance)"></div>
@@ -343,6 +363,12 @@ megregoreApp.component('memories-page', {
 
                     <!-- Action Buttons -->
                     <div style="display: flex; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.04);">
+                        <button @click="togglePin(memory)"
+                                :style="memory.is_permanent
+                                    ? 'font-size: 0.75rem; padding: 4px 12px; border-radius: 4px; background: rgba(251,191,36,0.1); color: #fbbf24; border: 1px solid rgba(251,191,36,0.2); cursor: pointer; transition: all 0.2s;'
+                                    : 'font-size: 0.75rem; padding: 4px 12px; border-radius: 4px; background: rgba(255,255,255,0.05); color: #8a8690; border: 1px solid rgba(255,255,255,0.08); cursor: pointer; transition: all 0.2s;'">
+                            {{ memory.is_permanent ? 'Unpin' : 'Pin' }}
+                        </button>
                         <button @click="startEdit(memory)"
                                 style="font-size: 0.75rem; padding: 4px 12px; border-radius: 4px; background: rgba(212,160,83,0.1); color: #d4a053; border: 1px solid rgba(212,160,83,0.2); cursor: pointer; transition: all 0.2s;"
                                 v-if="editingId !== memory.id">

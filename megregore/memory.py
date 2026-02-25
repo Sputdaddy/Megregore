@@ -138,6 +138,7 @@ async def store(
     context: Optional[str] = None,
     session_id: Optional[str] = None,
     thread_id: Optional[int] = None,
+    is_permanent: bool = False,
 ) -> dict:
     """Store a new memory. Returns the created memory."""
     now = _now()
@@ -149,10 +150,10 @@ async def store(
             """INSERT INTO memories
                (content, memory_type, importance, emotional_weight, tags, source,
                 context, session_id, thread_id, activation_level, last_activation_decay,
-                created_at, last_accessed)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1.0, ?, ?, ?)""",
+                is_permanent, created_at, last_accessed)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1.0, ?, ?, ?, ?)""",
             (content, memory_type, importance, emotional_weight, tags_json, source,
-             context, session_id, thread_id, now, now, now),
+             context, session_id, thread_id, now, int(is_permanent), now, now),
         )
         memory_id = cursor.lastrowid
         await db.commit()
@@ -209,6 +210,7 @@ async def store(
             "session_id": session_id,
             "thread_id": thread_id,
             "activation_level": 1.0,
+            "is_permanent": int(is_permanent),
             "created_at": now,
             "last_accessed": now,
         }
@@ -432,6 +434,7 @@ async def fade(memory_id: int, amount: float = 0.3) -> Optional[dict]:
     """
     Intentionally fade a memory (reduce importance).
     Memories don't get deleted — they fade, like human memories.
+    Permanent memories cannot be faded — unpin first.
     """
     db = await database.get_connection()
     try:
@@ -439,6 +442,13 @@ async def fade(memory_id: int, amount: float = 0.3) -> Optional[dict]:
         row = await cursor.fetchone()
         if row is None:
             return None
+
+        # Guard: permanent memories cannot be faded
+        if row["is_permanent"]:
+            mem = dict(row)
+            mem["tags"] = json.loads(mem["tags"])
+            mem["_error"] = "Cannot fade a permanent memory. Unpin it first."
+            return mem
 
         current_importance = row["importance"]
         new_importance = max(1, int(current_importance - amount * 10))
@@ -523,15 +533,16 @@ async def consolidate_memories(
         )
         reflection_id = cursor.lastrowid
 
-        # Fade sources and create links
+        # Fade sources and create links (permanent memories are exempt from fading)
         faded_count = 0
         for mem in sources:
-            new_importance = max(1, int(mem["importance"] - fade_amount * 10))
-            await db.execute(
-                "UPDATE memories SET importance = ? WHERE id = ?",
-                (new_importance, mem["id"]),
-            )
-            faded_count += 1
+            if not mem.get("is_permanent"):
+                new_importance = max(1, int(mem["importance"] - fade_amount * 10))
+                await db.execute(
+                    "UPDATE memories SET importance = ? WHERE id = ?",
+                    (new_importance, mem["id"]),
+                )
+                faded_count += 1
             await db.execute(
                 """INSERT OR REPLACE INTO memory_links
                    (source_memory_id, target_memory_id, link_type, strength, created_at)
@@ -609,16 +620,25 @@ async def get_all(
     memory_type: Optional[str] = None,
     sort_by: str = "created_at",
     sort_order: str = "desc",
+    is_permanent: Optional[bool] = None,
 ) -> tuple[list[dict], int]:
     """Get all memories with pagination. Returns (memories, total_count)."""
     db = await database.get_connection()
     try:
-        # Count total
-        count_sql = "SELECT COUNT(*) FROM memories"
+        # Build WHERE conditions
+        conditions: list[str] = []
         count_params: list = []
         if memory_type:
-            count_sql += " WHERE memory_type = ?"
+            conditions.append("memory_type = ?")
             count_params.append(memory_type)
+        if is_permanent is not None:
+            conditions.append("is_permanent = ?")
+            count_params.append(int(is_permanent))
+
+        where_clause = (" WHERE " + " AND ".join(conditions)) if conditions else ""
+
+        # Count total
+        count_sql = f"SELECT COUNT(*) FROM memories{where_clause}"
         cursor = await db.execute(count_sql, count_params)
         total = (await cursor.fetchone())[0]
 
@@ -630,11 +650,8 @@ async def get_all(
             sort_order = "desc"
 
         # Fetch page
-        sql = f"SELECT * FROM memories"
-        params: list = []
-        if memory_type:
-            sql += " WHERE memory_type = ?"
-            params.append(memory_type)
+        sql = f"SELECT * FROM memories{where_clause}"
+        params: list = list(count_params)
         sql += f" ORDER BY {sort_by} {sort_order} LIMIT ? OFFSET ?"
         params.extend([limit, offset])
 
@@ -918,7 +935,7 @@ async def apply_activation_decay() -> dict:
     db = await database.get_connection()
     try:
         cursor = await db.execute(
-            "SELECT id, importance, activation_level, last_activation_decay, created_at, memory_type FROM memories"
+            "SELECT id, importance, activation_level, last_activation_decay, created_at, memory_type FROM memories WHERE is_permanent = 0"
         )
         rows = await cursor.fetchall()
 
@@ -951,6 +968,7 @@ async def update_memory(
     importance: Optional[int] = None,
     tags: Optional[list[str]] = None,
     emotional_weight: Optional[float] = None,
+    is_permanent: Optional[bool] = None,
 ) -> Optional[dict]:
     """
     Partial update of a memory. Only changes provided fields.
@@ -980,6 +998,9 @@ async def update_memory(
         if emotional_weight is not None:
             updates.append("emotional_weight = ?")
             params.append(emotional_weight)
+        if is_permanent is not None:
+            updates.append("is_permanent = ?")
+            params.append(int(is_permanent))
 
         if not updates:
             mem["tags"] = json.loads(mem["tags"])

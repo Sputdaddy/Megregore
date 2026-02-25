@@ -645,3 +645,62 @@ async def migrate_v9_to_v10(db: aiosqlite.Connection) -> dict:
         "from_version": current_version,
         "to_version": 10,
     }
+
+
+async def migrate_v10_to_v11(db: aiosqlite.Connection) -> dict:
+    """
+    Migrate Megregore database from schema v10 to v11.
+
+    Adds is_permanent column to memories for always-loaded, decay-proof memories.
+
+    Idempotent — safe to call multiple times.
+    """
+    cursor = await db.execute(
+        "SELECT value FROM schema_meta WHERE key = ?", ("schema_version",)
+    )
+    row = await cursor.fetchone()
+    current_version = int(row[0]) if row else 10
+
+    if current_version >= 11:
+        logger.info("Database already at v11 or newer. Skipping migration.")
+        return {
+            "status": "already_migrated",
+            "from_version": current_version,
+            "to_version": current_version,
+        }
+
+    logger.info(f"Migrating database from v{current_version} to v11")
+
+    # Add is_permanent column to memories
+    try:
+        await db.execute(
+            "ALTER TABLE memories ADD COLUMN is_permanent INTEGER NOT NULL DEFAULT 0"
+        )
+        logger.debug("Added column memories.is_permanent")
+    except aiosqlite.OperationalError as e:
+        if "already exists" in str(e) or "duplicate column" in str(e):
+            logger.debug("Column memories.is_permanent already exists, skipping")
+        else:
+            raise
+
+    # Partial index on permanent memories only
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_memories_permanent ON memories(is_permanent) WHERE is_permanent = 1"
+    )
+    logger.debug("Created idx_memories_permanent index")
+
+    # Update schema version
+    await db.execute(
+        "INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)",
+        ("schema_version", "11"),
+    )
+    logger.debug("Updated schema_meta to version 11")
+
+    await db.commit()
+    logger.info("Migration v10 -> v11 complete")
+
+    return {
+        "status": "migrated",
+        "from_version": current_version,
+        "to_version": 11,
+    }

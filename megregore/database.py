@@ -13,7 +13,7 @@ from typing import Optional
 DB_DIR = Path(os.environ.get("MEGREGORE_DATA_DIR", str(Path(__file__).parent.parent / "data")))
 DB_PATH = DB_DIR / "megregore.db"
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 
 class _SharedConnection:
@@ -187,13 +187,14 @@ async def _initialize(db: aiosqlite.Connection) -> None:
 
     # Run migrations (idempotent — safe on fresh or existing DBs)
     # Must run BEFORE setting schema_version, since migration checks the version
-    from .migrations import migrate_v4_to_v5, migrate_v5_to_v6, migrate_v6_to_v7, migrate_v7_to_v8, migrate_v8_to_v9, migrate_v9_to_v10
+    from .migrations import migrate_v4_to_v5, migrate_v5_to_v6, migrate_v6_to_v7, migrate_v7_to_v8, migrate_v8_to_v9, migrate_v9_to_v10, migrate_v10_to_v11
     await migrate_v4_to_v5(db)
     await migrate_v5_to_v6(db)
     await migrate_v6_to_v7(db)
     await migrate_v7_to_v8(db)
     await migrate_v8_to_v9(db)
     await migrate_v9_to_v10(db)
+    await migrate_v10_to_v11(db)
 
     # Seed initial identity if none exists
     cursor = await db.execute("SELECT COUNT(*) FROM identity")

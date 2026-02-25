@@ -99,7 +99,37 @@ async def build_session_start(session_id: str) -> dict:
         logger.error("session_start: last summary failed: %s", e)
         result["last_summary"] = None
 
-    # 4. Recall recent + important memories (deduplicated, truncated)
+    # 4. Permanent memories (always loaded, decay-proof)
+    permanent_ids: set[int] = set()
+    try:
+        db = await database.get_connection()
+        cursor = await db.execute(
+            "SELECT id, content, memory_type, importance, tags, created_at "
+            "FROM memories WHERE is_permanent = 1 ORDER BY importance DESC LIMIT 20"
+        )
+        rows = await cursor.fetchall()
+        perm_memories = []
+        for row in rows:
+            m = dict(row)
+            m["tags"] = json.loads(m["tags"])
+            content = m["content"]
+            perm_memories.append({
+                "id": m["id"],
+                "content": content[:300] + "..." if len(content) > 300 else content,
+                "type": m["memory_type"],
+                "importance": m["importance"],
+                "tags": m["tags"],
+                "created_at": m["created_at"],
+            })
+            permanent_ids.add(m["id"])
+        result["permanent_memories"] = perm_memories
+        result["permanent_count"] = len(perm_memories)
+    except Exception as e:
+        logger.error("session_start: permanent memories failed: %s", e)
+        result["permanent_memories"] = []
+        result["permanent_count"] = 0
+
+    # 5. Recall recent + important memories (deduplicated, truncated)
     try:
         recent = await recall(
             query="last memories", limit=7,
@@ -110,11 +140,15 @@ async def build_session_start(session_id: str) -> dict:
             min_importance=8, session_id=session_id, expand_graph=False,
         )
 
-        # Deduplicate by ID, tag source
+        # Deduplicate by ID, tag source; exclude memories already in permanent set
         seen: dict[int, dict] = {}
         for m in recent:
+            if m["id"] in permanent_ids:
+                continue
             seen[m["id"]] = {"source": "recent", "mem": m}
         for m in important:
+            if m["id"] in permanent_ids:
+                continue
             if m["id"] in seen:
                 seen[m["id"]]["source"] = "both"
             else:
@@ -141,7 +175,7 @@ async def build_session_start(session_id: str) -> dict:
         result["memories"] = []
         result["memory_count"] = 0
 
-    # 5. Stats
+    # 6. Stats
     try:
         stats = await get_stats_summary()
         result["stats"] = stats
