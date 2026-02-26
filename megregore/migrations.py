@@ -704,3 +704,196 @@ async def migrate_v10_to_v11(db: aiosqlite.Connection) -> dict:
         "from_version": current_version,
         "to_version": 11,
     }
+
+
+async def migrate_v11_to_v12(db: aiosqlite.Connection) -> dict:
+    """
+    Migrate Megregore database from schema v11 to v12.
+
+    Adds personality evolution tables: personality_traits, trait_history,
+    preferences, preference_history, voice_notes.
+
+    Idempotent — safe to call multiple times.
+    """
+    cursor = await db.execute(
+        "SELECT value FROM schema_meta WHERE key = ?", ("schema_version",)
+    )
+    row = await cursor.fetchone()
+    current_version = int(row[0]) if row else 11
+
+    if current_version >= 12:
+        logger.info("Database already at v12 or newer. Skipping migration.")
+        return {
+            "status": "already_migrated",
+            "from_version": current_version,
+            "to_version": current_version,
+        }
+
+    logger.info(f"Migrating database from v{current_version} to v12")
+
+    # --- personality_traits ---
+    try:
+        await db.execute("""
+            CREATE TABLE personality_traits (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                category TEXT NOT NULL DEFAULT 'general',
+                value REAL NOT NULL DEFAULT 0.5 CHECK (value BETWEEN 0.0 AND 1.0),
+                description TEXT NOT NULL DEFAULT '',
+                anchors TEXT NOT NULL DEFAULT '{}',
+                session_id TEXT DEFAULT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        logger.debug("Created personality_traits table")
+    except aiosqlite.OperationalError as e:
+        if "already exists" in str(e):
+            logger.debug("personality_traits table already exists, skipping")
+        else:
+            raise
+
+    # --- trait_history ---
+    try:
+        await db.execute("""
+            CREATE TABLE trait_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                trait_id INTEGER NOT NULL,
+                previous_value REAL NOT NULL,
+                previous_description TEXT NOT NULL DEFAULT '',
+                new_value REAL NOT NULL,
+                new_description TEXT NOT NULL DEFAULT '',
+                change_reason TEXT NOT NULL DEFAULT '',
+                change_magnitude REAL NOT NULL DEFAULT 0.0,
+                source_memory_id INTEGER DEFAULT NULL,
+                session_id TEXT DEFAULT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (trait_id) REFERENCES personality_traits(id),
+                FOREIGN KEY (source_memory_id) REFERENCES memories(id)
+            )
+        """)
+        logger.debug("Created trait_history table")
+    except aiosqlite.OperationalError as e:
+        if "already exists" in str(e):
+            logger.debug("trait_history table already exists, skipping")
+        else:
+            raise
+
+    # --- preferences ---
+    try:
+        await db.execute("""
+            CREATE TABLE preferences (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                content TEXT NOT NULL,
+                domain TEXT NOT NULL DEFAULT 'general',
+                strength REAL NOT NULL DEFAULT 0.5 CHECK (strength BETWEEN 0.0 AND 1.0),
+                sentiment REAL NOT NULL DEFAULT 0.0 CHECK (sentiment BETWEEN -1.0 AND 1.0),
+                status TEXT NOT NULL DEFAULT 'active',
+                context TEXT DEFAULT NULL,
+                session_id TEXT DEFAULT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        logger.debug("Created preferences table")
+    except aiosqlite.OperationalError as e:
+        if "already exists" in str(e):
+            logger.debug("preferences table already exists, skipping")
+        else:
+            raise
+
+    # --- preference_history ---
+    try:
+        await db.execute("""
+            CREATE TABLE preference_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                preference_id INTEGER NOT NULL,
+                previous_content TEXT NOT NULL,
+                previous_strength REAL NOT NULL,
+                previous_sentiment REAL NOT NULL,
+                previous_status TEXT NOT NULL,
+                change_reason TEXT NOT NULL DEFAULT '',
+                session_id TEXT DEFAULT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (preference_id) REFERENCES preferences(id)
+            )
+        """)
+        logger.debug("Created preference_history table")
+    except aiosqlite.OperationalError as e:
+        if "already exists" in str(e):
+            logger.debug("preference_history table already exists, skipping")
+        else:
+            raise
+
+    # --- voice_notes ---
+    try:
+        await db.execute("""
+            CREATE TABLE voice_notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                content TEXT NOT NULL,
+                note_type TEXT NOT NULL DEFAULT 'observation',
+                status TEXT NOT NULL DEFAULT 'active',
+                source_context TEXT DEFAULT NULL,
+                session_id TEXT DEFAULT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        logger.debug("Created voice_notes table")
+    except aiosqlite.OperationalError as e:
+        if "already exists" in str(e):
+            logger.debug("voice_notes table already exists, skipping")
+        else:
+            raise
+
+    # --- Indexes ---
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_personality_traits_category ON personality_traits(category)"
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_personality_traits_updated ON personality_traits(updated_at)"
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_trait_history_trait_created ON trait_history(trait_id, created_at)"
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_preferences_domain ON preferences(domain)"
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_preferences_status ON preferences(status)"
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_preferences_strength ON preferences(strength)"
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_preferences_updated ON preferences(updated_at)"
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_preference_history_pref_created ON preference_history(preference_id, created_at)"
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_voice_notes_type ON voice_notes(note_type)"
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_voice_notes_status ON voice_notes(status)"
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_voice_notes_updated ON voice_notes(updated_at)"
+    )
+    logger.debug("Created v12 indexes")
+
+    # Update schema version
+    await db.execute(
+        "INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)",
+        ("schema_version", "12"),
+    )
+    logger.debug("Updated schema_meta to version 12")
+
+    await db.commit()
+    logger.info("Migration v11 -> v12 complete")
+
+    return {
+        "status": "migrated",
+        "from_version": current_version,
+        "to_version": 12,
+    }

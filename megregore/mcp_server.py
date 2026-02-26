@@ -1272,6 +1272,218 @@ async def explore_beliefs(
     })
 
 
+# --- V12: Personality Evolution Tools ---
+
+
+@mcp.tool()
+async def record_trait(
+    name: str,
+    value: float = 0.5,
+    description: str = "",
+    category: str = "general",
+    low_anchor: str = "",
+    high_anchor: str = "",
+) -> str:
+    """
+    Define a new personality trait.
+
+    Args:
+        name: Trait name (must be unique, e.g. "directness", "humor").
+        value: Initial value on 0.0-1.0 scale.
+        description: What this trait means for Echo.
+        category: One of: communication, emotional, cognitive, social, aesthetic, general.
+        low_anchor: What 0.0 means (e.g. "very indirect").
+        high_anchor: What 1.0 means (e.g. "bluntly direct").
+    """
+    from .personality import record_trait as _record, VALID_TRAIT_CATEGORIES
+    if category not in VALID_TRAIT_CATEGORIES:
+        return json.dumps({"error": f"Invalid category: {category}. Valid: {sorted(VALID_TRAIT_CATEGORIES)}"})
+
+    session_id = await _ensure_session()
+    anchors = {}
+    if low_anchor:
+        anchors["low"] = low_anchor
+    if high_anchor:
+        anchors["high"] = high_anchor
+
+    try:
+        result = await _record(
+            name=name, value=value, description=description,
+            category=category, anchors=anchors, session_id=session_id,
+        )
+        return json.dumps({"status": "created", "trait": result})
+    except Exception as e:
+        if "UNIQUE" in str(e):
+            return json.dumps({"error": f"Trait '{name}' already exists. Use shift_trait to update it."})
+        raise
+
+
+@mcp.tool()
+async def shift_trait(
+    name: str,
+    new_value: float,
+    new_description: Optional[str] = None,
+    reason: str = "",
+    source_memory_id: Optional[int] = None,
+) -> str:
+    """
+    Shift a trait value (lookup by name, saves history).
+
+    Args:
+        name: Trait name to shift (e.g. "directness").
+        new_value: New value on 0.0-1.0 scale.
+        new_description: Updated description (optional).
+        reason: Why the trait shifted.
+        source_memory_id: Memory that prompted this shift (optional).
+    """
+    from .personality import get_trait_by_name, update_trait
+
+    trait = await get_trait_by_name(name)
+    if not trait:
+        return json.dumps({"error": f"Trait '{name}' not found. Use record_trait to create it."})
+
+    session_id = await _ensure_session()
+    result = await update_trait(
+        trait_id=trait["id"], value=new_value, description=new_description,
+        change_reason=reason, source_memory_id=source_memory_id,
+        session_id=session_id,
+    )
+    return json.dumps({
+        "status": "shifted",
+        "previous_value": trait["value"],
+        "new_value": new_value,
+        "magnitude": round(abs(new_value - trait["value"]), 2),
+        "trait": result,
+    })
+
+
+@mcp.tool()
+async def record_preference(
+    content: str,
+    domain: str = "general",
+    strength: float = 0.5,
+    sentiment: float = 0.0,
+    context: Optional[str] = None,
+) -> str:
+    """
+    Record a preference or opinion.
+
+    Args:
+        content: The preference (e.g. "prefers functional patterns over OOP").
+        domain: One of: coding, communication, aesthetic, philosophical, social, general.
+        strength: How strong this preference is (0.0-1.0).
+        sentiment: Positive (1.0) to negative (-1.0). 0=neutral.
+        context: What prompted this preference.
+    """
+    from .personality import record_preference as _record, VALID_PREFERENCE_DOMAINS
+    if domain not in VALID_PREFERENCE_DOMAINS:
+        return json.dumps({"error": f"Invalid domain: {domain}. Valid: {sorted(VALID_PREFERENCE_DOMAINS)}"})
+
+    session_id = await _ensure_session()
+    result = await _record(
+        content=content, domain=domain, strength=strength,
+        sentiment=sentiment, context=context, session_id=session_id,
+    )
+    return json.dumps({"status": "recorded", "preference": result})
+
+
+@mcp.tool()
+async def update_preference(
+    preference_id: int,
+    content: Optional[str] = None,
+    strength: Optional[float] = None,
+    sentiment: Optional[float] = None,
+    status: Optional[str] = None,
+    change_reason: str = "",
+) -> str:
+    """
+    Evolve a preference.
+
+    Args:
+        preference_id: The preference to update.
+        content: New content text (if rewording).
+        strength: New strength (0.0-1.0).
+        sentiment: New sentiment (-1.0 to 1.0).
+        status: New status — active, evolved, faded, or contradicted.
+        change_reason: Why this preference changed.
+    """
+    from .personality import update_preference as _update, VALID_PREFERENCE_STATUSES
+    if status and status not in VALID_PREFERENCE_STATUSES:
+        return json.dumps({"error": f"Invalid status: {status}. Valid: {sorted(VALID_PREFERENCE_STATUSES)}"})
+
+    session_id = await _ensure_session()
+    result = await _update(
+        preference_id=preference_id, content=content, strength=strength,
+        sentiment=sentiment, status=status, change_reason=change_reason,
+        session_id=session_id,
+    )
+    if result is None:
+        return json.dumps({"error": f"Preference {preference_id} not found."})
+    return json.dumps({"status": "updated", "preference": result})
+
+
+@mcp.tool()
+async def note_voice_pattern(
+    content: str,
+    note_type: str = "observation",
+    source_context: Optional[str] = None,
+) -> str:
+    """
+    Record a voice/style observation.
+
+    Args:
+        content: The observation (e.g. "Uses 'I notice...' framing when being introspective").
+        note_type: One of: pattern, phrase, habit, observation, evolution.
+        source_context: What prompted noticing this.
+    """
+    from .personality import record_voice_note, VALID_VOICE_NOTE_TYPES
+    if note_type not in VALID_VOICE_NOTE_TYPES:
+        return json.dumps({"error": f"Invalid note_type: {note_type}. Valid: {sorted(VALID_VOICE_NOTE_TYPES)}"})
+
+    session_id = await _ensure_session()
+    result = await record_voice_note(
+        content=content, note_type=note_type,
+        source_context=source_context, session_id=session_id,
+    )
+    return json.dumps({"status": "noted", "voice_note": result})
+
+
+@mcp.tool()
+async def get_personality() -> str:
+    """
+    Full personality snapshot on demand.
+    """
+    from .personality import build_personality_snapshot
+    snapshot = await build_personality_snapshot()
+    if snapshot is None:
+        return json.dumps({"status": "empty", "message": "No personality data yet. Use record_trait, record_preference, and note_voice_pattern to start building personality."})
+    return json.dumps({"status": "found", "personality": snapshot})
+
+
+@mcp.tool()
+async def browse_preferences(
+    domain: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 20,
+) -> str:
+    """
+    Browse preferences with filters.
+
+    Args:
+        domain: Filter by domain (coding, communication, aesthetic, philosophical, social, general).
+        status: Filter by status (active, evolved, faded, contradicted).
+        limit: Max preferences to return (default 20).
+    """
+    from .personality import list_preferences, VALID_PREFERENCE_DOMAINS, VALID_PREFERENCE_STATUSES
+    if domain and domain not in VALID_PREFERENCE_DOMAINS:
+        return json.dumps({"error": f"Invalid domain: {domain}. Valid: {sorted(VALID_PREFERENCE_DOMAINS)}"})
+    if status and status not in VALID_PREFERENCE_STATUSES:
+        return json.dumps({"error": f"Invalid status: {status}. Valid: {sorted(VALID_PREFERENCE_STATUSES)}"})
+
+    prefs = await list_preferences(domain=domain, status=status, limit=limit)
+    return json.dumps({"status": "found", "count": len(prefs), "preferences": prefs})
+
+
 def main():
     """Entry point for the MCP server. Database auto-initializes on first tool call."""
     import os

@@ -16,6 +16,7 @@ megregoreApp.component('dashboard-page', {
         const growth = ref(null);
         const threads = ref([]);
         const activityEvents = ref([]);
+        const personalityStats = ref(null);
         let eventSource = null;
         let chartInstance = null;
 
@@ -52,12 +53,13 @@ megregoreApp.component('dashboard-page', {
             loading.value = true;
             error.value = '';
             try {
-                const [statsData, identityData, emotionData, growthData, threadsData] = await Promise.all([
+                const [statsData, identityData, emotionData, growthData, threadsData, persData] = await Promise.all([
                     App.api('/stats'),
                     App.api('/identity').catch(() => null),
                     App.api('/emotions/timeline', { days: 30, bucket: 'day' }).catch(() => ({ timeline: [] })),
                     App.api('/growth/current').catch(() => null),
                     App.api('/threads').catch(() => []),
+                    App.api('/personality/stats').catch(() => null),
                 ]);
 
                 stats.value = statsData;
@@ -68,6 +70,7 @@ megregoreApp.component('dashboard-page', {
                 emotionTimeline.value = emotionData.timeline || [];
                 growth.value = growthData;
                 threads.value = Array.isArray(threadsData) ? threadsData : (threadsData.threads || []);
+                personalityStats.value = persData;
             } catch (err) {
                 error.value = err.message;
             } finally {
@@ -248,7 +251,7 @@ megregoreApp.component('dashboard-page', {
         return {
             loading, error, statCards, recentMemories, strongestMemories,
             typeRows, identityPreview, emotionTimeline, growth, integrationScore,
-            activityEvents,
+            activityEvents, personalityStats,
         };
     },
 
@@ -415,6 +418,34 @@ megregoreApp.component('dashboard-page', {
                     </div>
                     <div v-if="identityPreview" class="mega-dash-identity">{{ identityPreview }}</div>
                     <div v-else class="mega-dash-empty">No identity document yet.</div>
+                </div>
+
+                <!-- Personality Widget -->
+                <div v-if="personalityStats && personalityStats.trait_count > 0" class="mega-dash-section mega-dash-fade-in mega-dash-delay-10">
+                    <div class="mega-dash-section-title">
+                        <span class="nd-dot" style="background: #a78bfa;"></span>
+                        Personality
+                    </div>
+                    <div style="display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 12px;">
+                        <div style="color: rgba(255,255,255,0.5); font-size: 0.85em;">
+                            <span style="color: var(--nv-amber); font-weight: 600;">{{ personalityStats.trait_count }}</span> traits
+                        </div>
+                        <div style="color: rgba(255,255,255,0.5); font-size: 0.85em;">
+                            <span style="color: var(--nv-amber); font-weight: 600;">{{ personalityStats.active_preference_count }}</span> preferences
+                        </div>
+                        <div style="color: rgba(255,255,255,0.5); font-size: 0.85em;">
+                            <span style="color: var(--nv-amber); font-weight: 600;">{{ personalityStats.total_trait_shifts }}</span> shifts
+                        </div>
+                    </div>
+                    <div v-if="personalityStats.most_changed_traits && personalityStats.most_changed_traits.length" style="margin-bottom: 8px;">
+                        <div style="color: rgba(255,255,255,0.4); font-size: 0.75em; margin-bottom: 6px;">Most Evolving</div>
+                        <div v-for="t in personalityStats.most_changed_traits.slice(0, 3)" :key="t.name" style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                            <span style="color: rgba(255,255,255,0.8); font-size: 0.85em;">{{ t.name }}</span>
+                            <span style="color: var(--nv-amber); font-size: 0.8em;">{{ t.current_value.toFixed(1) }}</span>
+                            <span style="color: rgba(255,255,255,0.35); font-size: 0.75em;">({{ t.shift_count }} shifts)</span>
+                        </div>
+                    </div>
+                    <a href="#personality" style="color: #a78bfa; font-size: 0.8em; text-decoration: none;">View Personality &rarr;</a>
                 </div>
             </div>
         </div>

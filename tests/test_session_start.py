@@ -24,6 +24,7 @@ class TestSessionStart:
         assert "memories" in result
         assert "memory_count" in result
         assert "stats" in result
+        assert "personality" in result
 
     async def test_identity_loaded(self, mock_db, mock_embeddings):
         """Identity document is loaded."""
@@ -79,6 +80,25 @@ class TestSessionStart:
         result = await build_session_start("test-sess")
         assert result["stats"] is not None
         assert "total_memories" in result["stats"]
+
+    async def test_personality_key_present(self, mock_db, mock_embeddings):
+        """Personality key is present (None when no data)."""
+        await create_session("test-sess")
+
+        result = await build_session_start("test-sess")
+        assert "personality" in result
+        # No traits defined yet, so should be None
+        assert result["personality"] is None
+
+    async def test_personality_with_data(self, mock_db, mock_embeddings):
+        """Personality snapshot loads when traits exist."""
+        from megregore.personality import record_trait
+        await create_session("test-sess")
+        await record_trait(name="warmth", value=0.8, category="emotional")
+
+        result = await build_session_start("test-sess")
+        assert result["personality"] is not None
+        assert len(result["personality"]["traits"]) == 1
 
     async def test_partial_failure_graceful(self, mock_db, mock_embeddings):
         """If identity fails, other sections still return."""

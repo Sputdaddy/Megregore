@@ -29,12 +29,12 @@ class TestMigrationV9ToV10:
         assert row is not None
 
     async def test_schema_version_bumped(self, db):
-        """Schema version should be 10."""
+        """Schema version should be at least 10."""
         cursor = await db.execute(
             "SELECT value FROM schema_meta WHERE key = 'schema_version'"
         )
         row = await cursor.fetchone()
-        assert row[0] == "10"
+        assert int(row[0]) >= 10
 
     async def test_idempotent(self, db):
         """Running migration twice should be safe."""

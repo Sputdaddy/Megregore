@@ -183,4 +183,13 @@ async def build_session_start(session_id: str) -> dict:
         logger.error("session_start: stats failed: %s", e)
         result["stats"] = None
 
+    # 7. Personality snapshot
+    try:
+        from .personality import build_personality_snapshot
+        snapshot = await build_personality_snapshot()
+        result["personality"] = snapshot
+    except Exception as e:
+        logger.error("session_start: personality snapshot failed: %s", e)
+        result["personality"] = None
+
     return result

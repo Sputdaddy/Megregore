@@ -15,7 +15,7 @@ const App = (() => {
     const PAGES = [
         'dashboard', 'memories', 'identity', 'reflections',
         'sessions', 'graph', 'threads', 'health', 'analytics',
-        'growth', 'blind-spots', 'self-model', 'beliefs',
+        'growth', 'blind-spots', 'self-model', 'beliefs', 'personality',
     ];
 
     // --- CSRF Token ---
@@ -380,6 +380,7 @@ const megregoreApp = createApp({
                 { id: 'blind-spots', label: 'Blind Spots', icon: '<circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>' },
                 { id: 'self-model', label: 'Self-Model', icon: '<path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/><path d="M12 8v4l3 3"/>' },
                 { id: 'beliefs', label: 'Beliefs', icon: '<path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>' },
+                { id: 'personality', label: 'Personality', icon: '<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/><path d="M12 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" fill="none" stroke="currentColor"/><path d="M8 14s1.5 2 4 2 4-2 4-2" fill="none" stroke="currentColor"/>' },
             ];
         },
     },
@@ -427,7 +428,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const migratedPages = [
         'dashboard', 'memories', 'identity', 'reflections',
         'sessions', 'graph', 'threads', 'health', 'analytics',
-        'growth', 'blind-spots', 'self-model', 'beliefs',
+        'growth', 'blind-spots', 'self-model', 'beliefs', 'personality',
     ];  // All pages migrated to Vue components
     App.PAGES.forEach(name => {
         if (!migratedPages.includes(name)) {

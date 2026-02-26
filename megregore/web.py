@@ -748,6 +748,113 @@ async def api_session_summaries(
         await db.close()
 
 
+# --- V12: Personality API ---
+
+VALID_TRAIT_CATEGORIES = {"communication", "emotional", "cognitive", "social", "aesthetic", "general"}
+VALID_PREFERENCE_DOMAINS = {"coding", "communication", "aesthetic", "philosophical", "social", "general"}
+VALID_PREFERENCE_STATUSES_PERSONALITY = {"active", "evolved", "faded", "contradicted"}
+VALID_VOICE_NOTE_TYPES = {"pattern", "phrase", "habit", "observation", "evolution"}
+VALID_VOICE_NOTE_STATUSES = {"active", "retired", "evolved"}
+
+
+@app.get("/api/personality/traits", dependencies=[Depends(require_auth)])
+async def api_personality_traits(
+    category: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """List personality traits."""
+    if category and category not in VALID_TRAIT_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid category: {category}")
+    from .personality import list_traits
+    traits = await list_traits(category=category, limit=limit)
+    return {"traits": traits, "count": len(traits)}
+
+
+@app.get("/api/personality/traits/{trait_id}", dependencies=[Depends(require_auth)])
+async def api_personality_trait_detail(trait_id: int):
+    """Trait detail with recent history."""
+    from .personality import get_trait, get_trait_history
+    trait = await get_trait(trait_id)
+    if trait is None:
+        raise HTTPException(status_code=404, detail="Trait not found")
+    history = await get_trait_history(trait_id, limit=10)
+    return {"trait": trait, "history": history}
+
+
+@app.get("/api/personality/traits/{trait_id}/trajectory", dependencies=[Depends(require_auth)])
+async def api_personality_trait_trajectory(
+    trait_id: int,
+    limit: int = Query(50, ge=1, le=200),
+):
+    """Chronological trait values for charting."""
+    from .personality import get_trait_trajectory, get_trait
+    trait = await get_trait(trait_id)
+    if trait is None:
+        raise HTTPException(status_code=404, detail="Trait not found")
+    trajectory = await get_trait_trajectory(trait_id, limit=limit)
+    return {"trait_name": trait["name"], "current_value": trait["value"], "trajectory": trajectory}
+
+
+@app.get("/api/personality/preferences", dependencies=[Depends(require_auth)])
+async def api_personality_preferences(
+    domain: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    min_strength: Optional[float] = Query(None, ge=0.0, le=1.0),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """List preferences with filters."""
+    if domain and domain not in VALID_PREFERENCE_DOMAINS:
+        raise HTTPException(status_code=400, detail=f"Invalid domain: {domain}")
+    if status and status not in VALID_PREFERENCE_STATUSES_PERSONALITY:
+        raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+    from .personality import list_preferences
+    prefs = await list_preferences(domain=domain, status=status, min_strength=min_strength, limit=limit)
+    return {"preferences": prefs, "count": len(prefs)}
+
+
+@app.get("/api/personality/preferences/{preference_id}", dependencies=[Depends(require_auth)])
+async def api_personality_preference_detail(preference_id: int):
+    """Preference detail with change history."""
+    from .personality import get_preference
+    pref = await get_preference(preference_id)
+    if pref is None:
+        raise HTTPException(status_code=404, detail="Preference not found")
+    return pref
+
+
+@app.get("/api/personality/voice-notes", dependencies=[Depends(require_auth)])
+async def api_personality_voice_notes(
+    note_type: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """List voice notes with filters."""
+    if note_type and note_type not in VALID_VOICE_NOTE_TYPES:
+        raise HTTPException(status_code=400, detail=f"Invalid note_type: {note_type}")
+    if status and status not in VALID_VOICE_NOTE_STATUSES:
+        raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+    from .personality import list_voice_notes
+    notes = await list_voice_notes(note_type=note_type, status=status, limit=limit)
+    return {"voice_notes": notes, "count": len(notes)}
+
+
+@app.get("/api/personality/snapshot", dependencies=[Depends(require_auth)])
+async def api_personality_snapshot():
+    """Full current personality snapshot."""
+    from .personality import build_personality_snapshot
+    snapshot = await build_personality_snapshot()
+    if snapshot is None:
+        return {"personality": None, "message": "No personality data yet."}
+    return {"personality": snapshot}
+
+
+@app.get("/api/personality/stats", dependencies=[Depends(require_auth)])
+async def api_personality_stats():
+    """Personality system statistics."""
+    from .personality import get_personality_stats
+    return await get_personality_stats()
+
+
 # --- Static Files (Web UI) ---
 
 # Mount static assets
