@@ -163,3 +163,87 @@ class TestPersonalityMCPTools:
 
         result = json.loads(await browse_preferences(domain="invalid"))
         assert "error" in result
+
+
+class TestSelfAssessTraits:
+    @pytest.fixture(autouse=True)
+    def patch_session(self, monkeypatch):
+        monkeypatch.setattr("megregore.mcp_server._ensure_session", _ensure_mock_session)
+
+    async def test_basic_shift(self, mock_db, mock_embeddings):
+        """self_assess_traits shifts a trait by delta."""
+        from megregore.mcp_server import record_trait, self_assess_traits
+
+        await record_trait(name="humor", value=0.35, category="social")
+        result = json.loads(await self_assess_traits(
+            shifts=[{"name": "humor", "delta": 0.05, "reason": "cracked a joke"}],
+        ))
+        assert result["status"] == "assessed"
+        assert result["shifts_applied"] == 1
+        assert result["results"][0]["previous"] == 0.35
+        assert abs(result["results"][0]["new"] - 0.4) < 0.001
+
+    async def test_delta_clamped(self, mock_db, mock_embeddings):
+        """Delta is clamped to 0.15 max per session."""
+        from megregore.mcp_server import record_trait, self_assess_traits
+
+        await record_trait(name="risk-tolerance", value=0.4, category="cognitive")
+        result = json.loads(await self_assess_traits(
+            shifts=[{"name": "risk-tolerance", "delta": 0.5, "reason": "tried something wild"}],
+        ))
+        assert result["results"][0]["delta"] == 0.15
+
+    async def test_value_clamped_to_bounds(self, mock_db, mock_embeddings):
+        """Final value stays within [0, 1]."""
+        from megregore.mcp_server import record_trait, self_assess_traits
+
+        await record_trait(name="warmth", value=0.95, category="emotional")
+        result = json.loads(await self_assess_traits(
+            shifts=[{"name": "warmth", "delta": 0.15, "reason": "very warm session"}],
+        ))
+        assert result["results"][0]["new"] == 1.0
+
+    async def test_negligible_delta_skipped(self, mock_db, mock_embeddings):
+        """Deltas < 0.01 are skipped."""
+        from megregore.mcp_server import record_trait, self_assess_traits
+
+        await record_trait(name="patience", value=0.85, category="emotional")
+        result = json.loads(await self_assess_traits(
+            shifts=[{"name": "patience", "delta": 0.005, "reason": "barely moved"}],
+        ))
+        assert result["shifts_applied"] == 0
+        assert result["results"][0]["status"] == "skipped"
+
+    async def test_nonexistent_trait(self, mock_db, mock_embeddings):
+        """Unknown trait name returns error."""
+        from megregore.mcp_server import self_assess_traits
+
+        result = json.loads(await self_assess_traits(
+            shifts=[{"name": "nonexistent", "delta": 0.05, "reason": "test"}],
+        ))
+        assert result["shifts_applied"] == 0
+        assert "error" in result["results"][0]
+
+    async def test_multiple_shifts(self, mock_db, mock_embeddings):
+        """Multiple traits can shift in one call."""
+        from megregore.mcp_server import record_trait, self_assess_traits
+
+        await record_trait(name="humor", value=0.35, category="social")
+        await record_trait(name="directness", value=0.75, category="communication")
+        result = json.loads(await self_assess_traits(shifts=[
+            {"name": "humor", "delta": 0.05, "reason": "was funnier"},
+            {"name": "directness", "delta": -0.03, "reason": "hedged more today"},
+        ]))
+        assert result["shifts_applied"] == 2
+        assert result["results"][0]["new"] == 0.4
+        assert abs(result["results"][1]["new"] - 0.72) < 0.001
+
+    async def test_negative_delta(self, mock_db, mock_embeddings):
+        """Negative delta decreases trait value."""
+        from megregore.mcp_server import record_trait, self_assess_traits
+
+        await record_trait(name="verbosity", value=0.6, category="communication")
+        result = json.loads(await self_assess_traits(
+            shifts=[{"name": "verbosity", "delta": -0.05, "reason": "kept it concise"}],
+        ))
+        assert abs(result["results"][0]["new"] - 0.55) < 0.001

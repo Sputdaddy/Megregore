@@ -1484,6 +1484,79 @@ async def browse_preferences(
     return json.dumps({"status": "found", "count": len(prefs), "preferences": prefs})
 
 
+@mcp.tool()
+async def self_assess_traits(
+    shifts: list[dict],
+) -> str:
+    """
+    End-of-session personality self-assessment. Call this during session reflection
+    to shift traits that genuinely moved during the conversation.
+
+    Each shift is: {"name": "trait_name", "delta": 0.05, "reason": "why it moved"}
+    Delta is signed: positive means increase, negative means decrease.
+    Magnitude is clamped to 0.15 per session to prevent wild swings.
+    Final value is clamped to [0.0, 1.0].
+
+    Args:
+        shifts: List of trait shifts. Each has name (str), delta (float), reason (str).
+    """
+    from .personality import get_trait_by_name, update_trait
+
+    session_id = await _ensure_session()
+    results = []
+    max_delta = 0.15
+
+    for shift in shifts:
+        name = shift.get("name")
+        delta = shift.get("delta", 0.0)
+        reason = shift.get("reason", "session self-assessment")
+
+        if not name:
+            results.append({"error": "missing trait name"})
+            continue
+
+        # Clamp delta magnitude
+        if abs(delta) > max_delta:
+            delta = max_delta if delta > 0 else -max_delta
+
+        # Skip negligible shifts
+        if abs(delta) < 0.01:
+            results.append({"name": name, "status": "skipped", "reason": "delta too small"})
+            continue
+
+        trait = await get_trait_by_name(name)
+        if not trait:
+            results.append({"name": name, "error": f"trait '{name}' not found"})
+            continue
+
+        old_value = trait["value"]
+        new_value = max(0.0, min(1.0, old_value + delta))
+
+        updated = await update_trait(
+            trait_id=trait["id"],
+            value=round(new_value, 3),
+            change_reason=reason,
+            session_id=session_id,
+        )
+
+        results.append({
+            "name": name,
+            "status": "shifted",
+            "previous": old_value,
+            "new": updated["value"],
+            "delta": round(new_value - old_value, 3),
+            "reason": reason,
+        })
+
+    shifted = [r for r in results if r.get("status") == "shifted"]
+    return json.dumps({
+        "status": "assessed",
+        "shifts_applied": len(shifted),
+        "total_evaluated": len(shifts),
+        "results": results,
+    })
+
+
 def main():
     """Entry point for the MCP server. Database auto-initializes on first tool call."""
     import os
