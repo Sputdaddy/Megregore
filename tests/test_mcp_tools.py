@@ -20,8 +20,14 @@ class is used.
 
 import sys
 import json
+import weakref
 import pytest
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, AsyncMock
+
+from mcp.server.lowlevel.server import request_ctx
+from mcp.shared.context import RequestContext
 
 # ---------------------------------------------------------------------------
 # Patch FastMCP before mcp_server is imported
@@ -62,9 +68,10 @@ pytestmark = pytest.mark.asyncio
 
 @pytest.fixture(autouse=True)
 def reset_session(monkeypatch):
-    """Reset the global _session_id between tests so each test gets a fresh session."""
+    """Reset the session IDs between tests so each test gets a fresh session."""
     import megregore.mcp_server as srv
     monkeypatch.setattr(srv, "_session_id", None)
+    monkeypatch.setattr(srv, "_sessions", weakref.WeakKeyDictionary())
 
 
 @pytest.fixture
@@ -513,3 +520,73 @@ class TestTemporalContext:
         result = json.loads(await temporal_context())
         assert "last_session" in result
         assert "time_since_last_session" in result
+
+
+# ---------------------------------------------------------------------------
+# Time since last session with several clients on one server (streamable-http)
+# ---------------------------------------------------------------------------
+
+class _Client:
+    """Stands in for one MCP client connection (one Claude conversation)."""
+
+
+@contextmanager
+def _connected(client):
+    """Run tool calls as if they arrived over `client`'s MCP connection."""
+    token = request_ctx.set(RequestContext(request_id=1, meta=None, session=client, lifespan_context=None))
+    try:
+        yield
+    finally:
+        request_ctx.reset(token)
+
+
+async def _set_session_times(db, session_id, hours_ago):
+    then = (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).isoformat()
+    await db.execute(
+        "UPDATE sessions SET started_at = ?, last_active = ? WHERE id = ?", (then, then, session_id)
+    )
+    await db.commit()
+
+
+class TestTimeSinceLastSessionPerClient:
+    async def test_previous_conversation_on_same_server_is_seen(self, mock_db, mock_embeddings, mock_introspection):
+        """A conversation that ended moments ago reads as "just now", not as the one before a restart."""
+        import megregore.mcp_server as srv
+        from megregore.memory import create_session
+
+        # Yesterday's conversation, from before the server last restarted.
+        await create_session("yesterday")
+        await _set_session_times(mock_db, "yesterday", hours_ago=26)
+
+        with _connected(_Client()):
+            await srv.session_start()
+            await srv.remember(content="Conversation A was here")
+            a_id = await srv._ensure_session()
+
+        with _connected(_Client()):
+            start = json.loads(await srv.session_start())
+            context = json.loads(await srv.temporal_context())
+            b_id = await srv._ensure_session()
+
+        assert a_id != b_id
+        assert start["time"]["last_session"] == "just now"
+        assert context["time_since_last_session"] == "just now"
+        assert context["last_session"]["id"] == a_id
+
+    async def test_any_tool_call_counts_as_activity(self, mock_db, mock_embeddings):
+        """A long conversation that never stored a memory still counts as active until its last call."""
+        import megregore.mcp_server as srv
+
+        a = _Client()
+        with _connected(a):
+            await srv.session_start()
+            a_id = await srv._ensure_session()
+        # Conversation A started three hours ago and was still recalling a moment ago.
+        await _set_session_times(mock_db, a_id, hours_ago=3)
+        with _connected(a):
+            await srv.temporal_context()
+
+        with _connected(_Client()):
+            start = json.loads(await srv.session_start())
+
+        assert start["time"]["last_session"] == "just now"
