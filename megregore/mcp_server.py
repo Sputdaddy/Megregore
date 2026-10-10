@@ -8,16 +8,18 @@ Run by Claude Code as a subprocess via MCP protocol.
 import json
 import logging
 import uuid
+import weakref
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.lowlevel.server import request_ctx
 
 from . import database
 from . import embeddings
 from .memory import store, recall, get, fade, link_memories, get_linked, get_stats, get_stats_summary, consolidate_memories
-from .memory import create_session, list_sessions as list_sessions_db, get_session_memories, get_session_mood
+from .memory import create_session, touch_session, list_sessions as list_sessions_db, get_session_memories, get_session_mood
 from .memory import apply_activation_decay
 from .identity import get_current, update, store_reflection
 
@@ -112,17 +114,36 @@ mcp = FastMCP(
     lifespan=lifespan,
 )
 
-# Lazy session initialization — created on first tool call that needs it
-_session_id: str | None = None
+# Lazy session initialization — created on first tool call that needs it.
+# One session per client connection: over streamable-http a single process serves every
+# Claude conversation, so a process-wide ID would make them all share one session.
+_sessions: "weakref.WeakKeyDictionary[object, str]" = weakref.WeakKeyDictionary()
+_session_id: str | None = None  # fallback outside an MCP request (direct calls, tests)
+
+
+def _client_connection() -> object | None:
+    """The MCP client connection the current tool call came from, if any."""
+    try:
+        return request_ctx.get().session
+    except LookupError:
+        return None
 
 
 async def _ensure_session() -> str:
-    """Get or create the session ID for this MCP process."""
+    """Get or create the session ID for this client connection and mark it active."""
     global _session_id
-    if _session_id is None:
-        _session_id = str(uuid.uuid4())[:8]
-        await create_session(_session_id)
-    return _session_id
+    conn = _client_connection()
+    session_id = _sessions.get(conn) if conn is not None else _session_id
+    if session_id is None:
+        session_id = str(uuid.uuid4())[:8]
+        await create_session(session_id)
+        if conn is not None:
+            _sessions[conn] = session_id
+        else:
+            _session_id = session_id
+    else:
+        await touch_session(session_id)
+    return session_id
 
 
 @mcp.tool()
@@ -807,6 +828,7 @@ def _format_elapsed(earlier_str, later_str):
 @mcp.tool()
 async def temporal_context() -> str:
     """Get current time, last session info, and elapsed time since last conversation."""
+    session_id = await _ensure_session()
     now = datetime.now(timezone.utc)
     now_iso = now.isoformat()
 
@@ -818,7 +840,7 @@ async def temporal_context() -> str:
 
     # Find the most recent session that isn't the current one
     for s in sessions:
-        if _session_id and s["id"] == _session_id:
+        if s["id"] == session_id:
             continue
         last_session = s
         break
@@ -848,7 +870,7 @@ async def temporal_context() -> str:
     # V11: Include last session summary for narrative continuity
     try:
         from .session_capture import get_last_summary
-        last_summary = await get_last_summary(exclude_session=_session_id)
+        last_summary = await get_last_summary(exclude_session=session_id)
         if last_summary:
             result["last_summary"] = {
                 "topics": json.loads(last_summary["topics"]),

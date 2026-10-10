@@ -766,6 +766,16 @@ async def create_session(session_id: str) -> dict:
         await db.close()
 
 
+async def touch_session(session_id: str) -> None:
+    """Update last_active for a session, so any tool call (not just storing) counts as activity."""
+    db = await database.get_connection()
+    try:
+        await db.execute("UPDATE sessions SET last_active = ? WHERE id = ?", (_now(), session_id))
+        await db.commit()
+    finally:
+        await db.close()
+
+
 async def _update_session_activity(db, session_id: str) -> None:
     """Increment memory count and update last_active for a session. Uses existing db connection."""
     now = _now()
